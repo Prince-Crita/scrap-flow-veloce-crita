@@ -155,9 +155,15 @@ async function probe(): Promise<{ ok: boolean; components: Record<string, boolea
  */
 function pythonCommand(): string {
   if (process.env.OCR_PYTHON) return process.env.OCR_PYTHON;
-  const root = process.cwd();
-  const venvWin = join(root, "ocr-service", ".venv", "Scripts", "python.exe");
-  const venvNix = join(root, "ocr-service", ".venv", "bin", "python");
+  // Without the ignore hint, Turbopack's file tracer cannot statically resolve
+  // process.cwd() and falls back to bundling the whole project into every route
+  // that imports this module (confirmed: it pulled backups/ and screenshots/
+  // into the ocr-status, ocr and dashboard function outputs, ~1000+ files each,
+  // which is what broke the Vercel deploy step). Inlined into each join() call
+  // — the marker must sit directly inside the traced call, not on a variable
+  // assigned earlier.
+  const venvWin = join(/*turbopackIgnore: true*/ process.cwd(), "ocr-service", ".venv", "Scripts", "python.exe");
+  const venvNix = join(/*turbopackIgnore: true*/ process.cwd(), "ocr-service", ".venv", "bin", "python");
   if (existsSync(venvWin)) return venvWin;
   if (existsSync(venvNix)) return venvNix;
   return process.platform === "win32" ? "python" : "python3";
@@ -175,7 +181,7 @@ function servicePort(): string {
 
 /** Spawn the FastAPI process. Detached from the request lifecycle. */
 function spawnService(): boolean {
-  const dir = join(process.cwd(), "ocr-service");
+  const dir = join(/*turbopackIgnore: true*/ process.cwd(), "ocr-service");
   if (!existsSync(join(dir, "main.py"))) {
     set({ state: "unavailable", detail: "ocr-service/main.py not found", managed: false });
     return false;

@@ -6,6 +6,26 @@ const nextConfig: NextConfig = {
     // Allow larger payloads for base64 image proxying to the OCR service.
     serverActions: { bodySizeLimit: "8mb" },
   },
+
+  /**
+   * `src/lib/ocr-supervisor.ts` resolves the OCR sidecar's path with
+   * `join(process.cwd(), "ocr-service")`, which Turbopack's output file tracer
+   * cannot statically resolve. Its fallback for an unresolvable path is to sweep
+   * the whole project into every route that imports the module — verified by
+   * inspecting the emitted `.nft.json` trace files: `/api/ocr`, `/api/admin/
+   * ocr-status` and `/api/admin/dashboard` (which surfaces OCR status) each
+   * carried 1,000+ files instead of the usual 100–250, including the entire
+   * local `backups/` (DB dump) and `screenshots/` (Playwright test output)
+   * directories and a full copy of `public/`, none of which any server function
+   * ever reads at runtime — `public/` is served by Vercel's static layer, not
+   * from function code. That multi-hundred-file bloat, repeated across three
+   * functions, is what was failing Vercel at the "Deploying outputs" step.
+   * Excluded here rather than relying on Turbopack's `turbopackIgnore` comment,
+   * which did not change the trace output in two verified rebuilds.
+   */
+  outputFileTracingExcludes: {
+    "*": ["./backups/**/*", "./screenshots/**/*", "./public/**/*"],
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
