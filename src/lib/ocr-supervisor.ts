@@ -181,6 +181,20 @@ function servicePort(): string {
 
 /** Spawn the FastAPI process. Detached from the request lifecycle. */
 function spawnService(): boolean {
+  /**
+   * A serverless function has no persistent process to spawn a lasting child
+   * into and no Python runtime — `process.env.VERCEL` is set on every Vercel
+   * build and execution. This does not disable OCR there: `OCR_SERVICE_URL`
+   * can still point at a service hosted elsewhere, and `tick()`/`probe()`
+   * above health-check it over plain `fetch`, which works the same anywhere.
+   * Only the local spawn attempt — meaningless off a persistent host — is
+   * skipped, so a Vercel deployment does not spend a cold start on a spawn
+   * that was always going to fail.
+   */
+  if (process.env.VERCEL) {
+    set({ state: "unavailable", detail: "local spawn is disabled on Vercel — set OCR_SERVICE_URL to a hosted OCR service", managed: false });
+    return false;
+  }
   const dir = join(/*turbopackIgnore: true*/ process.cwd(), "ocr-service");
   if (!existsSync(join(dir, "main.py"))) {
     set({ state: "unavailable", detail: "ocr-service/main.py not found", managed: false });
