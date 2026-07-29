@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-07-26T19:55:09.222Z",
+  "corpusImages": 4,
+  "labelled": 4,
+  "measured": 4,
+  "rateLimitedSkips": 0,
+  "positives": 2,
+  "negatives": 2,
+  "detectionRate": 1,
+  "recognitionRateExact": 1,
+  "characterAccuracy": 1,
+  "precision": 1,
+  "recall": 1,
+  "f1": 1,
+  "falsePositives": 0,
+  "falseNegatives": 0,
+  "trueNegatives": 2,
+  "averageConfidence": 0.99,
+  "averageProcessingMs": 799,
+  "failures": []
+}

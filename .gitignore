@@ -1,0 +1,36 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+
+# env
+.env
+.env*.local
+
+# prisma
+/prisma/*.db
+
+# misc
+.DS_Store
+*.pem
+/coverage
+npm-debug.log*
+.vercel
+*.tsbuildinfo
+
+# python / ocr service
+ocr-service/__pycache__/
+ocr-service/.venv/
+ocr-service/*.pt
+
+# local logical DB backups (prisma/backup.ts)
+/backups/
+
+# playwright responsive screenshots
+/screenshots/

@@ -1,0 +1,10 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pillow==11.1.0
+numpy==2.2.1
+opencv-python-headless==4.10.0.84
+# ML — heavy; pin CPU wheels in deployment
+ultralytics==8.3.58
+paddleocr==2.9.1
+paddlepaddle==2.6.2

@@ -1,0 +1,72 @@
+import { requireYard, ok } from "@/lib/api";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * The Sort queue is one row per MATERIAL awaiting segregation, not one per load.
+ *
+ * A load may arrive carrying several materials in the same vehicle, and each is
+ * segregated against its own sub-SKUs, so the line is the unit of work. Loads
+ * saved before line items existed have no lines; those are projected as a single
+ * implicit line built from the load's own material, which keeps historical lots
+ * sortable without back-filling a single row.
+ */
+export async function GET() {
+  const guard = await requireYard();
+  if ("res" in guard) return guard.res;
+  const { prisma } = guard;
+
+  const loads = await prisma.inwardLoad.findMany({
+    where: { status: "RECEIVED" },
+    orderBy: { createdAt: "asc" },
+    include: {
+      vendor: { select: { name: true } },
+      lines: { orderBy: { sequence: "asc" } },
+    },
+  });
+
+  // Child (non-mixed) SKUs grouped by material, plus the mixed source bucket.
+  const skus = await prisma.sku.findMany({ select: { id: true, name: true, materialId: true, isMixedBucket: true } });
+
+  // Every RECEIVED load appears in the Sort selector. Loads whose material has
+  // no segregation sub-SKUs yet are shown as not-yet-sortable rather than hidden
+  // (root cause of the "load missing from Sort after adding a new material" bug).
+  const lots = loads.flatMap((l) => {
+    const pending =
+      l.lines.length > 0
+        ? l.lines
+            .filter((ln) => ln.status === "RECEIVED")
+            .map((ln) => ({
+              lineId: ln.id as string | null,
+              materialId: ln.materialId,
+              materialLabel: ln.materialLabel,
+              kg: ln.quantityKg,
+            }))
+        : l.materialId
+          ? [{ lineId: null, materialId: l.materialId, materialLabel: l.materialLabel, kg: l.totalKg }]
+          : [];
+
+    return pending.map((p) => {
+      const targets = skus.filter((s) => s.materialId === p.materialId && !s.isMixedBucket);
+      const source = skus.find((s) => s.materialId === p.materialId && s.isMixedBucket);
+      return {
+        // Stable per-row identity. A multi-material load contributes several
+        // rows sharing one loadId, so selection must key on this, not loadId.
+        lotKey: p.lineId ?? l.id,
+        loadId: l.id,
+        lineId: p.lineId,
+        lotNumber: l.lotNumber,
+        materialLabel: p.materialLabel,
+        totalKg: p.kg,
+        vendorName: l.vendor?.name ?? "Walk-in",
+        vehicleNumber: l.vehicleNumber ?? "—",
+        createdAt: l.createdAt,
+        sourceSkuId: source?.id ?? null,
+        targets: targets.map((t) => ({ skuId: t.id, name: t.name })),
+        sortable: !!source && targets.length > 0,
+      };
+    });
+  });
+
+  return ok({ lots });
+}

@@ -1,0 +1,1742 @@
+@import "tailwindcss";
+
+/* =====================================================================
+   SCRAP FLOW · VELOCE — ported design system (source of truth = prototype)
+   Fonts (Poppins / JetBrains Mono) are injected via next/font as
+   --font-disp / --font-mono on <html>.
+   ===================================================================== */
+:root {
+  --ink: #0b1f15; /* deep forest */
+  --panel: #12291c;
+  --panel2: #183626;
+  --line: #234933;
+  --brand: #2e8b4f; /* veloce chevron green */
+  --orange: #f59e2b; /* veloce orange */
+  --mint: #9fe6b8; /* ticker mint */
+  --led: #6fe3a5;
+  --red: #ff6b5c;
+  --text: #f3f1ea; /* cream */
+  --muted: #8fae9c;
+  --disp: var(--font-disp), "Poppins", sans-serif;
+  --mono: var(--font-mono), "JetBrains Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: #07140d
+    url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60"><path d="M0 60 L60 0" stroke="%230B1F15" stroke-width="1"/></svg>');
+  font-family: var(--disp);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 16px 12px;
+  overflow-x: hidden;
+}
+
+.pageTitle {
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.pageSub {
+  font-size: 11px;
+  color: #557a66;
+  margin-bottom: 18px;
+  font-family: var(--mono);
+}
+
+/* ---------- APP SHELL ----------
+   This was a 390px phone mockup — rounded bezel, border, drop shadow, centred on
+   a branded backdrop. That preview frame is GONE. `.phone` is now nothing but the
+   app's root shell, and it fills the viewport at every size, like any responsive
+   web app. The class name is kept because `#phoneFrame` is the portal target that
+   overlays mount into and the id is referenced from JS.
+
+   Taken out of flow with `position: fixed` on purpose. <body> still flex-centres
+   its child with a 16px/12px gutter, and that is what centres the LOGIN card — a
+   real design element, unrelated to the old frame. Removing the shell from flow
+   makes it fill the screen without body's rules having to change, so login is
+   left exactly as designed at every width.
+
+   `dvh`, not `vh`: the shell must shrink and grow with a collapsing mobile URL
+   bar, or the tab bar ends up underneath it. */
+.phone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100dvh;
+  background: var(--ink);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Login is full-bleed on a phone (≤480px) — approved design, unchanged. It is
+   body-level because the login card, not the app shell, is what it acts on. */
+@media (max-width: 480px) {
+  body {
+    padding: 0;
+    align-items: stretch;
+  }
+}
+
+.hazard {
+  height: 6px;
+  background: repeating-linear-gradient(45deg, var(--orange) 0 14px, #0b1f15 14px 28px);
+  flex: none;
+  /* viewport-fit=cover: the app paints under the notch, so the chrome at each
+     edge pads itself out of the unsafe region. Zero on every non-notched
+     device and on desktop, so this costs nothing there. */
+  padding-top: env(safe-area-inset-top);
+}
+
+/* ---------- HEADER ---------- */
+header {
+  padding: 14px 18px 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.vlogo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+}
+.vlogo svg {
+  flex: none;
+}
+.vlogo .wm {
+  font-family: var(--disp);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+.vlogo .mod {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--mint);
+  display: block;
+  margin-top: -3px;
+}
+.streak {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 6px 11px;
+  text-align: center;
+}
+.streak b {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--orange);
+  display: block;
+}
+.streak span {
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+}
+.avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  position: relative;
+  flex: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.avatar svg {
+  position: absolute;
+  inset: 0;
+}
+.avatar b {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--mint);
+}
+
+/* ---------- TICKER ---------- */
+.ticker {
+  background: #06140c;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 6px 0;
+  position: relative;
+  flex: none;
+}
+.ticker .lbl {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--brand);
+  color: #06140c;
+  z-index: 2;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+.tk {
+  display: inline-block;
+  animation: tick 28s linear infinite;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mint);
+  padding-left: 100%;
+}
+.tk b {
+  color: var(--orange);
+}
+.tk .up {
+  color: var(--led);
+}
+.tk .dn {
+  color: var(--red);
+}
+.tk span {
+  margin-right: 26px;
+}
+@keyframes tick {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.xplabel {
+  margin: 10px 18px 6px;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  flex: none;
+}
+.xpbar {
+  margin: 0 18px 8px;
+  height: 7px;
+  background: var(--panel);
+  border-radius: 99px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  flex: none;
+}
+.xpbar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--mint));
+  border-radius: 99px;
+  transition: width 0.5s;
+}
+
+/* ---------- SCREENS ---------- */
+.screens {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.screen {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  /* 96px clears the tab bar. The insets keep the gutters clear of a landscape
+     notch and keep that 96px true once the tab bar grows by the home-indicator
+     gap; all three are 0 on desktop, so the padding is unchanged there. */
+  padding: 4px calc(18px + env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom))
+    calc(18px + env(safe-area-inset-left));
+  scrollbar-width: none;
+  animation: slide 0.25s ease;
+}
+.screen::-webkit-scrollbar {
+  display: none;
+}
+@keyframes slide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.secTitle {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 14px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.secTitle::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* ---------- STOCK CARDS ---------- */
+.sku {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 10px;
+  position: relative;
+  overflow: hidden;
+}
+.sku .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chipIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  flex: none;
+  background: rgba(46, 139, 79, 0.14);
+}
+.sku h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.sku small {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  display: block;
+}
+.kg {
+  margin-left: auto;
+  text-align: right;
+}
+.kg b {
+  font-family: var(--mono);
+  font-size: 18px;
+}
+.kg span {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+.meter {
+  margin-top: 10px;
+  height: 9px;
+  background: #08160e;
+  border-radius: 99px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.meter i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.6s ease;
+}
+.meterLbl {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 5px;
+}
+/* card gets extra top room so the READY badge sits above the quantity */
+.sku.isReady {
+  padding-top: 30px;
+}
+.ready {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: rgba(111, 227, 165, 0.12);
+  color: var(--led);
+  border: 1px solid rgba(111, 227, 165, 0.4);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  padding: 4px 8px;
+  border-radius: 99px;
+  animation: pulse 1.6s infinite;
+}
+/* Manage-visibility badge.
+   Shares the READY TO SELL pill's look, but NOT its absolute top-right position:
+   "HIDDEN · TAP TO SHOW" is 20 characters against READY TO SELL's 13, so pinned to
+   the corner it sat on top of the kilogram figure. Placed in normal flow instead —
+   it is rendered before .row, so it takes the top of the card and the content
+   follows, with the same 8px gap the pill has to the card edge. No extra
+   whitespace: the card grows only in manage mode, and only by the badge's height. */
+.ready.visBadge {
+  position: static;
+  display: inline-block;
+  margin: 0 0 8px;
+  animation: none;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(111, 227, 165, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(111, 227, 165, 0);
+  }
+}
+
+/* ---------- LED DISPLAY ---------- */
+.led {
+  background: #04110a;
+  border: 1px solid #1b4630;
+  border-radius: 18px;
+  padding: 18px 16px 14px;
+  margin-top: 14px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);
+}
+.led::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.18) 3px 4px);
+  pointer-events: none;
+}
+.led .val {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 44px;
+  color: var(--led);
+  text-align: right;
+  text-shadow: 0 0 14px rgba(111, 227, 165, 0.55);
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.led .unit {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #3e7a5f;
+  margin-top: 6px;
+  letter-spacing: 0.2em;
+}
+
+/* ---------- KEYPAD ---------- */
+.pad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+  position: relative;
+}
+/* camera-first: ADD WT shows locked until capture is complete */
+.key.add.locked {
+  opacity: 0.5;
+}
+/* camera-first: glow + pulse ring prompting the user to capture */
+.key.fn.needsCapture {
+  color: var(--orange);
+  border-color: var(--orange);
+  animation: camGlow 1s ease-in-out infinite;
+}
+@keyframes camGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 43, 0.55);
+    border-color: var(--orange);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(245, 158, 43, 0);
+    border-color: var(--orange);
+  }
+}
+.captureTip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  background: #08160e;
+  border: 1px solid var(--orange);
+  color: var(--orange);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  white-space: nowrap;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  animation: fade 0.2s ease;
+}
+.captureTip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 18px;
+  border: 6px solid transparent;
+  border-top-color: var(--orange);
+}
+/* detected plate crop preview in camera step 2 */
+.plateCrop {
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #04110a;
+}
+.plateCrop img {
+  width: 100%;
+  max-height: 90px;
+  object-fit: contain;
+  display: block;
+}
+.key {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-bottom-width: 3px;
+  border-radius: 14px;
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 14px 0;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.05s;
+}
+.key:active {
+  transform: translateY(2px);
+  border-bottom-width: 1px;
+}
+.key.fn {
+  color: var(--orange);
+  font-size: 14px;
+}
+.key.add {
+  grid-row: span 2;
+  background: var(--orange);
+  border-color: #b86f0e;
+  color: #1f1402;
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.05em;
+}
+.key:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.chip {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 7px 13px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip.on {
+  background: rgba(245, 158, 43, 0.14);
+  border-color: var(--orange);
+  color: var(--orange);
+  font-weight: 600;
+}
+.chipX {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--red);
+  opacity: 0.75;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.chipX:active {
+  background: rgba(255, 107, 92, 0.18);
+}
+.entries {
+  margin-top: 10px;
+}
+.entry {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 4px;
+  border-bottom: 1px dashed var(--line);
+}
+.entry b {
+  color: var(--text);
+}
+/* Load-cart row: material name takes the slack so the weight and the remove
+   control stay together on the right. Additive — `.entry` itself is untouched. */
+.entry span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entry .entryUnit {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 10px;
+}
+.entryX {
+  margin-left: 10px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--red);
+  opacity: 0.75;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  cursor: pointer;
+  /* Comfortable thumb target without changing the row's height. */
+  min-width: 28px;
+}
+.entryX:active {
+  background: rgba(255, 107, 92, 0.18);
+}
+/* Unit selector on the LED. Styled to read as the static "KG" label it
+   replaced — the digital display must look unchanged. */
+.unitSel {
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 0;
+  padding: 0 14px 0 0;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #3e7a5f;
+  letter-spacing: 0.2em;
+  text-align: right;
+  text-transform: uppercase;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, #3e7a5f 50%),
+    linear-gradient(135deg, #3e7a5f 50%, transparent 50%);
+  background-position: right 4px center, right 1px center;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.unitSel:focus-visible {
+  outline: 1px solid var(--led);
+  outline-offset: 2px;
+}
+.unitSel option {
+  background: #0d1a14;
+  color: var(--text);
+  letter-spacing: normal;
+}
+
+/* ---------- RECENT LOAD DETAILS (read-only viewer) ---------- */
+.rlCard {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.rlHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  text-align: left;
+}
+.rlLot {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+.rlKg {
+  font-size: 13px;
+  color: var(--orange);
+  font-weight: 700;
+}
+.rlCaret {
+  font-size: 10px;
+  color: var(--muted);
+  min-width: 14px;
+  text-align: right;
+}
+.rlMeta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.rlBody {
+  margin-top: 8px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+.rlRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  padding: 3px 0;
+}
+.rlRow b {
+  color: var(--text);
+  text-align: right;
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rlLink {
+  color: var(--led);
+  text-decoration: underline;
+}
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 10px 4px;
+  color: var(--orange);
+}
+.cta {
+  width: 100%;
+  margin-top: 12px;
+  background: var(--brand);
+  border: none;
+  border-bottom: 3px solid #1b5a33;
+  border-radius: 16px;
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  color: #f3f1ea;
+  padding: 15px;
+  cursor: pointer;
+}
+.cta:active {
+  transform: translateY(2px);
+}
+.cta.ghost {
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  font-weight: 500;
+}
+.cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ---------- SORT ---------- */
+.lot {
+  background: linear-gradient(135deg, var(--panel), var(--panel2));
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.lot h3 {
+  font-size: 14px;
+}
+.lot .big {
+  font-family: var(--mono);
+  font-size: 26px;
+  color: var(--orange);
+  margin-top: 2px;
+}
+.splitRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.splitRow span {
+  flex: 1;
+  font-size: 13px;
+}
+.step {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--orange);
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.splitVal {
+  font-family: var(--mono);
+  font-size: 15px;
+  width: 64px;
+  text-align: center;
+  /* Now an <input> rather than a <div>: strip the UA chrome so the row looks
+     exactly as it did, then hint that it is editable. Without the explicit
+     background/color an input inherits the browser's white-on-white default and
+     the value disappears against the dark panel. */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px 2px;
+  min-width: 0;
+  cursor: text;
+}
+.splitVal:hover {
+  border-color: var(--line);
+}
+.splitVal:focus {
+  outline: none;
+  border-color: var(--orange);
+  background: var(--panel2);
+}
+/* iOS zooms the page when a focused input is under 16px. Keep the row compact on
+   desktop and lift the font on touch so tapping a value does not jump the layout. */
+@media (hover: none) and (pointer: coarse) {
+  .splitVal { font-size: 16px; }
+}
+.waste {
+  border-color: rgba(255, 107, 92, 0.4);
+}
+.waste span {
+  color: var(--red);
+}
+.remain {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  margin: 4px 2px 10px;
+}
+
+/* ---------- SELL ---------- */
+.alert {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: rgba(111, 227, 165, 0.07);
+  border: 1px solid rgba(111, 227, 165, 0.3);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.alert h3 {
+  font-size: 13px;
+}
+.alert small {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.sellBtn {
+  margin-left: auto;
+  background: var(--orange);
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: 12px;
+  color: #1f1402;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  flex: none;
+}
+.recv {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 9px 4px;
+  border-bottom: 1px dashed var(--line);
+  color: var(--muted);
+}
+.recv b {
+  color: var(--text);
+}
+/* Second action in an inactive-vendor/material row. `.sellBtn` already pushes
+   itself right with margin-left:auto, so only the gap needs stating. */
+.recv .sellBtn + .sellBtn {
+  margin-left: 8px;
+}
+.sellBtn.danger {
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+.sellBtn.danger:active {
+  background: rgba(255, 107, 92, 0.18);
+}
+/* ---------- OWNER DISPATCH STATUS ---------- */
+.dispTotals {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.dispTotal {
+  flex: 1;
+  text-align: center;
+  padding: 9px 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.dispTotal b {
+  display: block;
+  font-family: var(--disp);
+  font-size: 18px;
+  line-height: 1.1;
+  color: var(--text);
+}
+.dispTotal span {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+.dispTotal.pending b {
+  color: var(--muted);
+}
+.dispTotal.partial b {
+  color: var(--orange);
+}
+.dispTotal.done b {
+  color: var(--led);
+}
+.dispPill {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dispPill.partial {
+  color: var(--orange);
+  border-color: var(--orange);
+}
+.dispPill.completed {
+  color: var(--led);
+  border-color: var(--led);
+}
+.dispBar {
+  height: 5px;
+  margin-top: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.dispBar i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--muted);
+  transition: width 0.5s;
+}
+.dispBar i.partial {
+  background: var(--orange);
+}
+.dispBar i.completed {
+  background: linear-gradient(90deg, var(--brand), var(--mint));
+}
+.dispVeh {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.dispShots {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.dispShots img {
+  width: 54px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+/* ---------- OUTWARD ALLOCATION SUMMARY ---------- */
+.allocBar {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.allocRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  padding: 3px 0;
+}
+.allocRow b {
+  color: var(--text);
+  font-weight: 600;
+}
+/* The number the operator is actually working against. */
+.allocRow.bal {
+  border-top: 1px dashed var(--line);
+  margin-top: 4px;
+  padding-top: 6px;
+  font-size: 12px;
+}
+.allocRow.bal b {
+  color: var(--orange);
+  font-weight: 700;
+}
+
+/* ---------- PROFILE POPUP (level badge) ---------- */
+/* The level ring now derives its offset from real XP; the transition is what
+   makes an XP award animate rather than jump. */
+.avatar .ringFill {
+  transition: stroke-dashoffset 0.6s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar .ringFill {
+    transition: none;
+  }
+}
+.profStats {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.profStat {
+  flex: 1;
+  text-align: center;
+  padding: 10px 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.profStat b {
+  display: block;
+  font-family: var(--disp);
+  font-size: 18px;
+  color: var(--text);
+  line-height: 1.1;
+}
+.profStat span {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+/* The header bar is inset from the phone edge; inside a sheet it must not be. */
+.sheet .xplabel,
+.sheet .xpbar {
+  margin-left: 0;
+  margin-right: 0;
+}
+.profSoon {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.cta.danger {
+  background: transparent;
+  border: 1px solid var(--red);
+  border-bottom: 3px solid var(--red);
+  color: var(--red);
+}
+.purgeErr {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--red);
+  padding: 8px 4px 0;
+  line-height: 1.5;
+}
+
+/* ---------- STOCK TRACEABILITY DRILL-DOWN ---------- */
+.traceRow {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.traceHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.traceHead b {
+  font-size: 13px;
+}
+.traceHead span {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.traceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.traceMeta .rem {
+  color: var(--led);
+}
+.traceWhen {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: #557a66;
+  margin-top: 5px;
+}
+
+/* ---------- SALES REPORT CARDS ---------- */
+.reportCard {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.reportTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.reportTop b {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+.reportTop .pay {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.reportBody {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0;
+}
+.reportFoot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #557a66;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+.reportFoot b {
+  color: var(--orange);
+  font-size: 13px;
+}
+
+/* ---------- TABS ---------- */
+nav.tabbar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(6, 20, 12, 0.94);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+  display: flex;
+  padding: 10px calc(8px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom))
+    calc(8px + env(safe-area-inset-left));
+  z-index: 10;
+}
+nav.tabbar a,
+nav.tabbar button {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--disp);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+}
+nav.tabbar .ico {
+  font-size: 19px;
+  filter: grayscale(1);
+  opacity: 0.55;
+  transition: 0.2s;
+}
+nav.tabbar .on {
+  color: var(--orange);
+}
+nav.tabbar .on .ico {
+  filter: none;
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+/* ---------- TOAST ---------- */
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%) translateY(20px);
+  opacity: 0;
+  pointer-events: none;
+  background: #08160e;
+  border: 1px solid var(--mint);
+  color: var(--mint);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 10px 18px;
+  border-radius: 99px;
+  transition: 0.3s;
+  white-space: nowrap;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ---------- CELEBRATION ---------- */
+.party {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 12, 8, 0.72);
+  backdrop-filter: blur(3px);
+}
+.party.show {
+  display: flex;
+}
+.party canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.partyCard {
+  position: relative;
+  background: var(--panel2);
+  border: 1px solid var(--brand);
+  border-radius: 24px;
+  padding: 28px 26px;
+  text-align: center;
+  width: 78%;
+  box-shadow: 0 0 60px rgba(46, 139, 79, 0.35);
+  animation: pop 0.45s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes pop {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.partyCard .big {
+  font-size: 46px;
+  line-height: 1;
+  animation: bounce 1s infinite alternate;
+}
+@keyframes bounce {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-8px);
+  }
+}
+.partyCard h2 {
+  font-size: 19px;
+  margin: 10px 0 4px;
+  color: var(--mint);
+  letter-spacing: 0.04em;
+}
+.partyCard p {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.partyCard .xpwin {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--orange);
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+.partyCard button {
+  background: var(--brand);
+  border: none;
+  border-bottom: 3px solid #1b5a33;
+  border-radius: 14px;
+  color: #f3f1ea;
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  padding: 12px 26px;
+  cursor: pointer;
+}
+
+/* ---------- IN-APP CONFIRM MODAL (replaces native confirm) ---------- */
+.confirmCard {
+  width: 82%;
+}
+.confirmCard .confirmMsg {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.confirmBtns {
+  display: flex;
+  gap: 10px;
+}
+.confirmBtns button {
+  flex: 1;
+  border-radius: 14px;
+  font-family: var(--disp);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  padding: 12px 0;
+  cursor: pointer;
+}
+.confirmCancel {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.confirmGo {
+  background: var(--brand);
+  border: none;
+  border-bottom: 3px solid #1b5a33;
+  color: #f3f1ea;
+}
+.confirmGo.danger {
+  background: var(--red);
+  border-bottom-color: #b8362d;
+  color: #2a0d0a;
+}
+
+/* ---------- HEADER AVATAR + TINY SIGN-OUT (no layout shift) ---------- */
+.avatarWrap {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 42px;
+}
+.signoutTiny {
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-family: var(--disp);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.signoutTiny:active {
+  opacity: 1;
+  color: var(--orange);
+}
+
+/* ---------- MODAL SHEET (camera / sell / vendor) ---------- */
+.sheetWrap {
+  position: absolute;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(4, 12, 8, 0.72);
+  backdrop-filter: blur(3px);
+  animation: fade 0.2s ease;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.sheet {
+  width: 100%;
+  max-height: 92%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 24px 24px 0 0;
+  padding: 18px 18px calc(20px + env(safe-area-inset-bottom));
+  animation: sheetUp 0.28s cubic-bezier(0.2, 1, 0.3, 1);
+}
+.sheet::-webkit-scrollbar {
+  display: none;
+}
+@keyframes sheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.sheetHandle {
+  width: 40px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--line);
+  margin: 0 auto 14px;
+}
+.sheetTitle {
+  font-size: 13px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.sheetStep {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.field {
+  margin-bottom: 12px;
+}
+.field label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.field input,
+.field select {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 15px;
+  outline: none;
+}
+.field input:focus,
+.field select:focus {
+  border-color: var(--orange);
+}
+.plateBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plateBox .conf {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--led);
+  white-space: nowrap;
+}
+
+/* capture tiles */
+.captureGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.captureGrid.mat {
+  grid-template-columns: repeat(3, 1fr);
+}
+.capTile {
+  aspect-ratio: 1;
+  border-radius: 14px;
+  border: 1px dashed var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.capTile .ic {
+  font-size: 22px;
+}
+.capTile.filled {
+  border-style: solid;
+  border-color: var(--brand);
+}
+.capTile img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.capTile .badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--brand);
+  color: #06140c;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 99px;
+}
+.hint {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin: 4px 0 12px;
+  line-height: 1.5;
+}
+
+/* ---------- LOGIN ---------- */
+.login {
+  width: 390px;
+  max-width: 100%;
+  background: var(--ink);
+  border-radius: 28px;
+  border: 1px solid #224732;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65), inset 0 0 0 6px #050d08;
+  overflow: hidden;
+}
+.login .body {
+  padding: 30px 26px 34px;
+}
+.login h1 {
+  font-family: var(--disp);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 30px;
+  margin-top: 14px;
+}
+.login .mod {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--mint);
+  margin-bottom: 22px;
+}
+.login .err {
+  background: rgba(255, 107, 92, 0.1);
+  border: 1px solid rgba(255, 107, 92, 0.4);
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+.login .demo {
+  margin-top: 18px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.7;
+  text-align: center;
+}
+
+/* ---------- SKELETON ---------- */
+.skel {
+  background: linear-gradient(90deg, var(--panel) 25%, var(--panel2) 50%, var(--panel) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+  border-radius: 18px;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---------- TABLET / DESKTOP: centered phone frame on a branded backdrop ---------- */
+@media (min-width: 901px) {
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, #0d251a 0%, #07140d 60%), #07140d;
+  }
+}
+
+/* ---------- SMALL PHONES (≤360px) — keep everything on-screen ---------- */
+@media (max-width: 360px) {
+  .screen {
+    /* Tighter gutters than the full-bleed default, but still clear of a
+       landscape notch. */
+    padding-left: calc(12px + env(safe-area-inset-left));
+    padding-right: calc(12px + env(safe-area-inset-right));
+  }
+  .pad {
+    gap: 6px;
+  }
+  .key {
+    font-size: 17px;
+    padding: 12px 0;
+  }
+  .led .val {
+    font-size: 38px;
+  }
+  header {
+    padding: 12px 12px 6px;
+  }
+  .xplabel,
+  .xpbar {
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+  .splitRow {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .splitVal {
+    width: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Per-row unit selector on a Sort split row.
+   Each material now carries its own unit, so the selector sits inline between
+   the value and the "+" step. Reuses .unitSel's look; only the alignment and
+   the tap target differ, because on a row it is a control rather than a label
+   sitting on the LED. */
+.splitRow .unitSel.rowUnit {
+  flex: none;
+  min-width: 54px;
+  text-align: center;
+  padding: 6px 14px 6px 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  background-position: right 4px center, right 1px center;
+}
+.splitRow .unitSel.rowUnit:hover { color: var(--text); }
+@media (max-width: 380px) {
+  /* Keep the two steppers and the value on one line on a small phone: the unit
+     is the least-used control in the row, so it is the one that shrinks. */
+  .splitRow .unitSel.rowUnit { min-width: 44px; font-size: 9px; letter-spacing: 0.08em; }
+  .splitRow { gap: 7px; padding: 10px 9px; }
+}
+
+/* The "Totals in" row was removed: it duplicated the per-row selectors and was
+   routinely mistaken for one of them. Totals now always render in kilograms, the
+   ledger unit. Rules for .summaryRow / .summaryUnit deleted with it rather than
+   left as dead CSS. */
+
+/* "Manage Sort Types" is the last thing on the Sort screen, and .screen's 96px
+   bottom padding is only just clear of the tab bar — the chip's tap target ended
+   up under it. A little more room below, applied to this chip alone rather than to
+   every screen's padding. */
+.chip.manageChip {
+  display: inline-block;
+  margin-top: 12px;
+  margin-bottom: 24px;
+}

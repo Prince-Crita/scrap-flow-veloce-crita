@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!--
+    Veloce mark. Dark forest disc + the double chevron used by .aBrand and the
+    login screen, so the tab icon is the same mark as the in-app logo.
+
+    Declared explicitly (Next serves this as /icon.svg with a <link rel="icon">)
+    rather than relying on a /favicon.ico fallback. That fallback is exactly what
+    made another localhost project pick this one up: browsers key the guessed
+    /favicon.ico by HOST, and localhost:3000 and localhost:3001 are the same host.
+    A named icon URL is requested per document and never shared that way.
+  -->
+  <circle cx="32" cy="32" r="32" fill="#0d2b12" />
+  <g transform="translate(13.5 12.5) scale(1.115)">
+    <path d="M2 1 L13 13 L2 25 L8 25 L19 13 L8 1 Z" fill="#2E8B4F" />
+    <path d="M14 1 L25 13 L14 25 L20 25 L31 13 L20 1 Z" fill="#2E8B4F" opacity=".55" />
+  </g>
+</svg>

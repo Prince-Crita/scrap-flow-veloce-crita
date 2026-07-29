@@ -1,0 +1,13 @@
+{
+  "name": "Scrap Flow · Veloce",
+  "short_name": "Scrap Flow",
+  "description": "Mobile-first scrap dealer management for live yard operations.",
+  "start_url": "/stock",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#07140d",
+  "theme_color": "#07140d",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

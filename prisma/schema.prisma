@@ -1,0 +1,724 @@
+// Scrap Flow – Veloce | Prisma schema
+// Source of truth for inventory, audit trail, and all Phase 1 modules.
+//
+// MULTI-TENANT. `Yard` is the tenant root: every operational row carries a
+// non-null `yardId`, and all uniqueness that used to be global is now scoped
+// per yard so two yards can independently own "MS Bazar" or lot "A-115".
+//
+// This file was reconciled against the live database by introspection
+// (`prisma db pull`) — it describes what actually exists. Do not hand-edit a
+// constraint here without checking `npm run db:diff` first; `npm run db:push`
+// is guarded (prisma/safe-push.ts) and will refuse any destructive diff.
+
+generator client {
+  provider        = "prisma-client-js"
+  /// `relationJoins` lets a query opt into `relationLoadStrategy: "join"`, which
+  /// resolves a nested `select` as LATERAL joins in ONE statement instead of one
+  /// round trip per relation LEVEL.
+  ///
+  /// This is the measured hot spot of the admin dashboard. In-server timing of the
+  /// batch showed the recent-dispatches read (OutwardLoad → lines → sku, → sale →
+  /// buyer) taking 1,121 ms and single-handedly setting the route's wall time,
+  /// while every non-nested query in the same `Promise.all` finished in ~320 ms.
+  /// Relation levels cannot overlap — each needs the parent ids — so they cost
+  /// round trips in series, and no amount of pool tuning helps.
+  ///
+  /// Opt-in per query: the default strategy is unchanged, so no query that does
+  /// not ask for it behaves differently.
+  previewFeatures = ["relationJoins"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  /// Pooled endpoint (PgBouncer, transaction mode). Every application query goes
+  /// through this — unchanged, and it stays the only URL the running app uses.
+  url       = env("DATABASE_URL")
+  /// Unpooled endpoint: SAME database, same credentials, host without "-pooler".
+  /// Used only by `prisma migrate`, which needs a session it can hold advisory
+  /// locks on. PgBouncer transaction pooling cannot provide that, which is why a
+  /// second URL — not a second database — is required.
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  OWNER
+  MANAGER
+  ADMIN // platform super-admin; yardId is null (cross-tenant)
+}
+
+enum LoadStatus {
+  RECEIVED
+  SEGREGATED
+}
+
+enum SegregationStatus {
+  OPEN
+  COMPLETED
+}
+
+enum SaleStatus {
+  DRAFT
+  DISPATCHED
+}
+
+enum ReceivableStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+enum TxnType {
+  INWARD
+  SEGREGATION_IN
+  SEGREGATION_OUT
+  WASTAGE
+  SALE
+  /// Physical dispatch against a sale allocation. A sale RESERVES stock; the
+  /// kilograms only leave inventory when a vehicle is actually loaded.
+  OUTWARD
+  /// Manual correction with a recorded reason and actor. The only sanctioned
+  /// way to change a ledger-derived quantity after the fact.
+  STOCK_ADJUSTMENT
+}
+
+/// How much of a sale has physically left the yard.
+enum DispatchStatus {
+  PENDING
+  PARTIAL
+  COMPLETED
+}
+
+/// Tenant root. One company owns many yards; a yard owns all of its operational
+/// data. Deactivating a yard blocks its users' logins but never deletes data —
+/// the FKs below are Restrict precisely so a yard with history cannot be erased.
+model Yard {
+  id            String    @id @default(cuid())
+  yardCode      String    @unique
+  yardName      String
+  ownerName     String?
+  address       String?
+  city          String?
+  state         String?
+  country       String?   @default("India")
+  timezone      String    @default("Asia/Kolkata")
+  contactNumber String?
+  gstNumber     String?
+  active        Boolean   @default(true)
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  users                  User[]
+  vendors                Vendor[]
+  buyers                 Buyer[]
+  materials              Material[]
+  skus                   Sku[]
+  inventory              Inventory[]
+  inventoryLots          InventoryLot[]
+  inwardLoads            InwardLoad[]
+  weightEntries          WeightEntry[]
+  loadLines              InwardLoadLine[]
+  materialImages         MaterialImage[]
+  outwardLoads           OutwardLoad[]
+  outwardLines           OutwardLoadLine[]
+  outwardImages          OutwardImage[]
+  segregationRuns        SegregationRun[]
+  segregationAllocations SegregationAllocation[]
+  sales                  Sale[]
+  receivables            Receivable[]
+  inventoryTxns          InventoryTransaction[]
+  auditLogs              AuditLog[]
+  impersonations         ImpersonationSession[]
+
+  @@index([active])
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String
+  name               String
+  role               Role      @default(MANAGER)
+  /// Null only for ADMIN (cross-tenant). OWNER/MANAGER always belong to a yard.
+  yardId             String?
+  yard               Yard?     @relation(fields: [yardId], references: [id])
+  active             Boolean   @default(true)
+  /// Set by an admin password reset; forces a change on next login.
+  mustChangePassword Boolean   @default(false)
+  xp                 Int       @default(0)
+  level              Int       @default(1)
+  streak             Int       @default(0)
+  lastActiveDate     DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  inwardLoads     InwardLoad[]
+  outwardLoads    OutwardLoad[]
+  segregationRuns SegregationRun[]
+  sales           Sale[]
+  vendorsCreated  Vendor[]
+  inventoryTxns   InventoryTransaction[]
+  auditLogs       AuditLog[]
+  impersonations  ImpersonationSession[]
+
+  @@index([yardId])
+}
+
+model Vendor {
+  id          String   @id @default(cuid())
+  yardId      String
+  yard        Yard     @relation(fields: [yardId], references: [id])
+  name        String
+  gstNumber   String?
+  phone       String?
+  address     String?
+  active      Boolean  @default(true)
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  loads         InwardLoad[]
+  inventoryLots InventoryLot[]
+
+  @@index([name])
+  @@index([yardId, active])
+}
+
+model Buyer {
+  id        String   @id @default(cuid())
+  yardId    String
+  yard      Yard     @relation(fields: [yardId], references: [id])
+  name      String
+  gstNumber String?
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales       Sale[]
+  receivables Receivable[]
+
+  @@index([name])
+  @@index([yardId])
+}
+
+model Material {
+  id        String   @id @default(cuid())
+  yardId    String
+  yard      Yard     @relation(fields: [yardId], references: [id])
+  name      String
+  code      String
+  category  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  skus      Sku[]
+  loads     InwardLoad[]
+  loadLines InwardLoadLine[]
+
+  @@unique([yardId, name])
+  @@unique([yardId, code])
+  @@index([yardId, active])
+}
+
+model Sku {
+  id              String    @id @default(cuid())
+  yardId          String
+  yard            Yard      @relation(fields: [yardId], references: [id])
+  name            String
+  code            String
+  icon            String    @default("📦")
+  materialId      String?
+  material        Material? @relation(fields: [materialId], references: [id])
+  saleThresholdKg Int       @default(1000)
+  isMixedBucket   Boolean   @default(false)
+  visible         Boolean   @default(true)
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  inventory     Inventory?
+  allocations   SegregationAllocation[]
+  segRunsSource SegregationRun[]        @relation("SegSourceSku")
+  sales         Sale[]
+  inventoryTxns InventoryTransaction[]
+  inventoryLots InventoryLot[]
+  loadLines     InwardLoadLine[]
+  weightEntries WeightEntry[]
+  outwardLines  OutwardLoadLine[]
+
+  @@unique([yardId, name])
+  @@unique([yardId, code])
+  @@index([yardId, sortOrder])
+}
+
+/// Running total per SKU. `skuId` stays globally unique: SKUs are already
+/// per-yard, so a 1:1 on skuId is both correct and cheaper than a redundant
+/// composite on a table written by every inward, sort and sale.
+model Inventory {
+  id         String   @id @default(cuid())
+  yardId     String
+  yard       Yard     @relation(fields: [yardId], references: [id])
+  skuId      String   @unique
+  sku        Sku      @relation(fields: [skuId], references: [id])
+  quantityKg Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@index([yardId])
+}
+
+model InwardLoad {
+  id                 String     @id @default(cuid())
+  yardId             String
+  yard               Yard       @relation(fields: [yardId], references: [id])
+  /// Client-generated idempotency key. A weighbridge operator on a flaky mobile
+  /// connection will re-tap SAVE LOAD; without this, the retry creates a second
+  /// lot and double-counts the stock. Unique per yard, so a replay is answered
+  /// with the original lot instead of a new one.
+  clientRequestId    String?
+  lotNumber          String
+  vendorId           String?
+  vendor             Vendor?    @relation(fields: [vendorId], references: [id])
+  materialId         String?
+  material           Material?  @relation(fields: [materialId], references: [id])
+  materialLabel      String
+  totalKg            Int
+  vehicleNumber      String?
+  vehicleType        String?
+  driverName         String?
+  ocrConfidence      Float?
+  frontImageUrl      String?
+  backImageUrl       String?
+  /// Scan of the weighbridge ticket. Evidence only — the authoritative weight
+  /// is always the sum of the load's lines, never anything read off the slip.
+  weighbridgeSlipUrl String?
+  status             LoadStatus @default(RECEIVED)
+  capturedById       String?
+  capturedBy         User?      @relation(fields: [capturedById], references: [id])
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  weightEntries   WeightEntry[]
+  lines           InwardLoadLine[]
+  materialImages  MaterialImage[]
+  segregationRuns SegregationRun[]
+  inventoryLots   InventoryLot[]
+
+  @@unique([yardId, lotNumber])
+  @@unique([yardId, clientRequestId])
+  @@index([yardId, status])
+  @@index([yardId, createdAt])
+  /**
+   * Platform-wide "most recent" reads.
+   * The admin console's recent-activity lists order by `createdAt` across ALL
+   * yards, which the leading-`yardId` composite cannot serve — Postgres fell back
+   * to a sequential scan plus a sort for a query that returns eight rows.
+   */
+  @@index([createdAt])
+}
+
+model WeightEntry {
+  id        String          @id @default(cuid())
+  yardId    String
+  yard      Yard            @relation(fields: [yardId], references: [id])
+  loadId    String
+  load      InwardLoad      @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  /// Which material this weighment was booked against. Null on rows written
+  /// before multi-material loads existed — those belong to the load's own
+  /// single material, so readers fall back to `load.materialLabel`.
+  lineId    String?
+  line      InwardLoadLine? @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  skuId     String?
+  sku       Sku?            @relation(fields: [skuId], references: [id])
+  sequence  Int
+  kg        Int
+  createdAt DateTime        @default(now())
+
+  @@index([loadId])
+  @@index([lineId])
+  @@index([yardId])
+}
+
+/// One material within a load. A load may carry several materials in the same
+/// vehicle ("Mixed MS 400 kg + PET Mixed 150 kg"), and each is segregated
+/// separately, so the line — not the load — is the unit Sort works on.
+///
+/// Lines are grouped by SKU at commit: adding the same material twice in the
+/// cart produces one line whose `quantityKg` is the sum, which keeps exactly
+/// one traceable InventoryLot per material per load.
+///
+/// Loads saved before this model existed have no lines. Readers treat such a
+/// load as a single implicit line built from `InwardLoad.materialId`, so no
+/// historical row had to be back-filled or rewritten.
+model InwardLoadLine {
+  id            String     @id @default(cuid())
+  yardId        String
+  yard          Yard       @relation(fields: [yardId], references: [id])
+  loadId        String
+  load          InwardLoad @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  sequence      Int
+  skuId         String
+  sku           Sku        @relation(fields: [skuId], references: [id])
+  materialId    String?
+  material      Material?  @relation(fields: [materialId], references: [id])
+  materialLabel String
+  /// ALWAYS kilograms. The keypad may capture Ton/Tonne; the conversion happens
+  /// in the UI layer and a unit is never stored on a ledger table — otherwise
+  /// every historical row becomes ambiguous.
+  quantityKg    Int
+  /// Per-line segregation state. The parent load flips to SEGREGATED only once
+  /// every one of its lines has been sorted.
+  status        LoadStatus @default(RECEIVED)
+  createdAt     DateTime   @default(now())
+
+  weightEntries WeightEntry[]
+
+  @@unique([loadId, skuId])
+  @@index([loadId])
+  @@index([yardId, status])
+}
+
+model MaterialImage {
+  id        String     @id @default(cuid())
+  yardId    String
+  yard      Yard       @relation(fields: [yardId], references: [id])
+  loadId    String
+  load      InwardLoad @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  url       String
+  createdAt DateTime   @default(now())
+
+  @@index([loadId])
+  @@index([yardId])
+}
+
+model SegregationRun {
+  id            String            @id @default(cuid())
+  yardId        String
+  yard          Yard              @relation(fields: [yardId], references: [id])
+  lotNumber     String
+  sourceLoadId  String?
+  sourceLoad    InwardLoad?       @relation(fields: [sourceLoadId], references: [id])
+  sourceSkuId   String
+  sourceSku     Sku               @relation("SegSourceSku", fields: [sourceSkuId], references: [id])
+  totalKg       Int
+  wastageKg     Int               @default(0)
+  wastagePct    Float             @default(0)
+  status        SegregationStatus @default(COMPLETED)
+  completedById String?
+  completedBy   User?             @relation(fields: [completedById], references: [id])
+  createdAt     DateTime          @default(now())
+
+  allocations SegregationAllocation[]
+
+  @@index([yardId, status])
+}
+
+model SegregationAllocation {
+  id     String         @id @default(cuid())
+  yardId String
+  yard   Yard           @relation(fields: [yardId], references: [id])
+  runId  String
+  run    SegregationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  skuId  String
+  sku    Sku            @relation(fields: [skuId], references: [id])
+  kg     Int
+
+  @@index([runId])
+  @@index([yardId])
+}
+
+model Sale {
+  id              String          @id @default(cuid())
+  yardId          String
+  yard            Yard            @relation(fields: [yardId], references: [id])
+  /// Idempotency key — see InwardLoad.clientRequestId. A replayed sale would
+  /// otherwise burn an invoice number and deduct the stock twice.
+  clientRequestId String?
+  invoiceNumber   String
+  buyerId         String
+  buyer           Buyer           @relation(fields: [buyerId], references: [id])
+  skuId           String
+  sku             Sku             @relation(fields: [skuId], references: [id])
+  quantityKg      Int
+  ratePerKg       Float
+  subtotal        Float
+  gstRate         Float           @default(18)
+  gstAmount       Float
+  total           Float
+  vehicleNumber   String?
+  driverName      String?
+  driverPhone     String?
+  status          SaleStatus      @default(DISPATCHED)
+  /// Kilograms already loaded onto vehicles against this sale.
+  ///
+  /// NULL means the sale predates the Outward workflow: its stock was deducted
+  /// at sale time, so it counts as fully dispatched and never appears in the
+  /// Manager's outward queue. No historical row had to be rewritten.
+  dispatchedKg    Int?
+  dispatchStatus  DispatchStatus?
+  createdById     String?
+  createdBy       User?           @relation(fields: [createdById], references: [id])
+  createdAt       DateTime        @default(now())
+
+  receivable       Receivable?
+  outwardLoadLines OutwardLoadLine[]
+
+  @@unique([yardId, invoiceNumber])
+  @@unique([yardId, clientRequestId])
+  @@index([yardId, createdAt])
+  /**
+   * Platform-wide "most recent" reads.
+   * The admin console's recent-activity lists order by `createdAt` across ALL
+   * yards, which the leading-`yardId` composite cannot serve — Postgres fell back
+   * to a sequential scan plus a sort for a query that returns eight rows.
+   */
+  @@index([createdAt])
+}
+
+model Receivable {
+  id        String           @id @default(cuid())
+  yardId    String
+  yard      Yard             @relation(fields: [yardId], references: [id])
+  saleId    String           @unique
+  sale      Sale             @relation(fields: [saleId], references: [id])
+  buyerId   String
+  buyer     Buyer            @relation(fields: [buyerId], references: [id])
+  amount    Float
+  status    ReceivableStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+
+  @@index([yardId, status])
+}
+
+model InventoryTransaction {
+  id        String   @id @default(cuid())
+  yardId    String
+  yard      Yard     @relation(fields: [yardId], references: [id])
+  skuId     String
+  sku       Sku      @relation(fields: [skuId], references: [id])
+  changeKg  Int
+  type      TxnType
+  refId     String?
+  refType   String?
+  byUserId  String?
+  byUser    User?    @relation(fields: [byUserId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([yardId, skuId])
+  @@index([yardId, createdAt])
+  /**
+   * Platform-wide "most recent" reads.
+   * The admin console's recent-activity lists order by `createdAt` across ALL
+   * yards, which the leading-`yardId` composite cannot serve — Postgres fell back
+   * to a sequential scan plus a sort for a query that returns eight rows.
+   */
+  @@index([createdAt])
+}
+
+/// A traceable stock batch: the vendor-attributed unit of inventory.
+/// Inward creates a mixed-bucket batch; segregation splits it into finished-SKU
+/// batches that inherit the source vendor/vehicle/load; sales consume batches FIFO.
+model InventoryLot {
+  id            String      @id @default(cuid())
+  yardId        String
+  yard          Yard        @relation(fields: [yardId], references: [id])
+  skuId         String
+  sku           Sku         @relation(fields: [skuId], references: [id])
+  vendorId      String?
+  vendor        Vendor?     @relation(fields: [vendorId], references: [id])
+  vehicleNumber String?
+  sourceLoadId  String?
+  sourceLoad    InwardLoad? @relation(fields: [sourceLoadId], references: [id])
+  originalKg    Int
+  remainingKg   Int
+  createdAt     DateTime    @default(now())
+
+  @@index([vendorId])
+  @@index([sourceLoadId])
+  @@index([yardId, skuId])
+}
+
+/// Sequence counters. Keyed "{yardId}:{name}" so lot and invoice numbering is
+/// independent per yard. Not FK-bound to Yard by design: the key is a string PK
+/// and the counter must survive independently of row-level cascade rules.
+model Counter {
+  name  String @id
+  value Int    @default(0)
+}
+
+/// Append-only trail of privileged mutations. Written for every ADMIN write and
+/// every impersonation boundary. `before`/`after` hold the changed field subset,
+/// never whole rows, and never password hashes.
+model AuditLog {
+  id        String   @id @default(cuid())
+  yardId    String?
+  yard      Yard?    @relation(fields: [yardId], references: [id])
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([yardId, createdAt])
+  /**
+   * Platform-wide "most recent" reads.
+   * The admin console's recent-activity lists order by `createdAt` across ALL
+   * yards, which the leading-`yardId` composite cannot serve — Postgres fell back
+   * to a sequential scan plus a sort for a query that returns eight rows.
+   */
+  @@index([createdAt])
+}
+
+/// An admin "Enter Yard" session. Deliberately a first-class table rather than
+/// an AuditLog JSON blob: duration and currently-open sessions must be
+/// queryable, and an open session is security-relevant state, not just history.
+model ImpersonationSession {
+  id          String    @id @default(cuid())
+  adminId     String
+  admin       User      @relation(fields: [adminId], references: [id])
+  yardId      String
+  yard        Yard      @relation(fields: [yardId], references: [id])
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  /// Denormalised on exit so reports never recompute across millions of rows.
+  durationSec Int?
+  /// "manual" (clicked Exit) | "expired" (TTL) | "signout"
+  endReason   String?
+  ip          String?
+  userAgent   String?
+
+  @@index([adminId, startedAt])
+  @@index([yardId, startedAt])
+  @@index([endedAt])
+}
+
+/// One vehicle leaving the yard.
+///
+/// Deliberately mirrors InwardLoad: same capture evidence (front/rear vehicle
+/// images, plate OCR + confidence, driver, vehicle type, material photos) and
+/// the same client-side idempotency key, because it is driven by the same
+/// camera workflow and the same flaky-connection reality.
+model OutwardLoad {
+  id              String   @id @default(cuid())
+  yardId          String
+  yard            Yard     @relation(fields: [yardId], references: [id])
+  /// Idempotency key — see InwardLoad.clientRequestId. A replayed dispatch
+  /// would otherwise deduct the stock twice and over-dispatch the allocation.
+  clientRequestId String?
+  dispatchNumber  String
+  vehicleNumber   String?
+  vehicleType     String?
+  driverName      String?
+  ocrConfidence   Float?
+  frontImageUrl   String?
+  backImageUrl    String?
+  totalKg         Int
+  dispatchedById  String?
+  dispatchedBy    User?    @relation(fields: [dispatchedById], references: [id])
+  createdAt       DateTime @default(now())
+
+  lines  OutwardLoadLine[]
+  images OutwardImage[]
+
+  @@unique([yardId, dispatchNumber])
+  @@unique([yardId, clientRequestId])
+  @@index([yardId, createdAt])
+  /**
+   * Platform-wide "most recent" reads.
+   * The admin console's recent-activity lists order by `createdAt` across ALL
+   * yards, which the leading-`yardId` composite cannot serve — Postgres fell back
+   * to a sequential scan plus a sort for a query that returns eight rows.
+   */
+  @@index([createdAt])
+}
+
+/// What this vehicle carried, per sale allocation.
+///
+/// The line points at BOTH the sale and the SKU so a single vehicle can carry
+/// several allocations, and so every dispatched kilogram is attributable to the
+/// invoice it satisfies.
+model OutwardLoadLine {
+  id         String      @id @default(cuid())
+  yardId     String
+  yard       Yard        @relation(fields: [yardId], references: [id])
+  loadId     String
+  load       OutwardLoad @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  saleId     String
+  sale       Sale        @relation(fields: [saleId], references: [id])
+  skuId      String
+  sku        Sku         @relation(fields: [skuId], references: [id])
+  sequence   Int
+  /// ALWAYS kilograms — the unit selector converts in the UI layer, exactly as
+  /// on Inward. A unit is never stored on a ledger table.
+  quantityKg Int
+  createdAt  DateTime    @default(now())
+
+  @@index([loadId])
+  @@index([saleId])
+  @@index([yardId, skuId])
+}
+
+model OutwardImage {
+  id        String      @id @default(cuid())
+  yardId    String
+  yard      Yard        @relation(fields: [yardId], references: [id])
+  loadId    String
+  load      OutwardLoad @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  url       String
+  createdAt DateTime    @default(now())
+
+  @@index([loadId])
+  @@index([yardId])
+}
+
+/// Fixed-window rate-limit counters, shared across server instances.
+///
+/// The in-process limiter this replaces granted each instance its own budget, so
+/// the effective limit was `configured × instances`. A counter row keyed on
+/// (bucket, window) is a single atomic upsert — no pub/sub, no session state — so
+/// it works over the pooled connection like every other query.
+///
+/// Rows are disposable: `windowStart` makes old ones dead weight, and any row
+/// older than a few minutes can be deleted without consequence.
+model RateLimitCounter {
+  /// Endpoint class + subject, e.g. "ocr:user_abc123" or "auth:203.0.113.7".
+  bucket      String
+  /// Epoch-millisecond start of the fixed window this row counts.
+  windowStart BigInt
+  count       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@id([bucket, windowStart])
+  @@index([windowStart])
+}
+
+/// Per-account authentication throttling.
+///
+/// The per-IP limiter cannot protect one account from a distributed attempt, and
+/// cannot lock an account at all. This tracks consecutive failures per identity so
+/// a lockout survives a restart and is shared by every instance.
+///
+/// Keyed on the lower-cased email rather than a user id, so probing an address
+/// that does not exist is throttled identically — otherwise the difference in
+/// behaviour would itself enumerate valid accounts.
+model LoginAttempt {
+  email         String    @id
+  failedCount   Int       @default(0)
+  lastFailedAt  DateTime?
+  /// Set while locked. Null means not locked.
+  lockedUntil   DateTime?
+  /// How many times this account has been locked, ever — drives the backoff.
+  lockCount     Int       @default(0)
+  lastSuccessAt DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  @@index([lockedUntil])
+}

@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-07-26T16:58:23.849Z",
+  "kind": "coverage",
+  "note": "COVERAGE, NOT ACCURACY — a confidently wrong plate counts as a read. Comparable between runs only.",
+  "uniquePhotographs": 4,
+  "filesOnDisk": 165,
+  "duplicateFiles": 161,
+  "measured": 4,
+  "rateLimitedSkips": 0,
+  "returnedAPlate": 2,
+  "readRate": 0.5,
+  "structurallyValid": 2,
+  "structuralRate": 0.5,
+  "degradedToManualEntry": 0,
+  "correctedFromYardHistory": 0,
+  "medianConfidence": 0.99,
+  "confidenceAtOrAbove080": 2,
+  "medianLatencyMs": 989,
+  "medianPreprocessingAttempts": 6,
+  "perImage": [
+    {
+      "image": "vehicle-back-1784718025882.jpg",
+      "plate": null,
+      "confidence": 0,
+      "attempts": 6
+    },
+    {
+      "image": "vehicle-back-1784730778444.png",
+      "plate": null,
+      "confidence": 0,
+      "attempts": 6
+    },
+    {
+      "image": "vehicle-front-1784718022549.jpg",
+      "plate": "HR55AC3348",
+      "confidence": 0.99,
+      "attempts": 1
+    },
+    {
+      "image": "vehicle-front-1784732277184.jpg",
+      "plate": "DL7CQ1939",
+      "confidence": 0.99,
+      "attempts": 7
+    }
+  ]
+}
