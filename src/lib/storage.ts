@@ -16,6 +16,22 @@ export interface StoredFile {
   url: string;
 }
 
+/**
+ * Thrown when there is nowhere durable to put the bytes.
+ *
+ * A distinct type rather than a generic Error so the API boundary can answer
+ * with an actionable message and a 503 (temporarily misconfigured) instead of a
+ * blanket 500 (we broke). The upload route already wraps `storeImage` in
+ * try/catch, so this degrades to a clean JSON error — it never crashes a
+ * request or the process.
+ */
+export class StorageNotConfiguredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StorageNotConfiguredError";
+  }
+}
+
 const CONTENT_TYPE: Record<ImageFormat, string> = {
   jpg: "image/jpeg",
   png: "image/png",
@@ -43,6 +59,11 @@ export async function storeImage(
   // or bulk-exported alongside another's, and per-yard storage is measurable.
   const relPath = `uploads/${keyParts.yardId}/${date}/${folder}/${name}`;
 
+  /**
+   * Read at call time, never captured at module scope. That is what makes the
+   * token hot-swappable: add BLOB_READ_WRITE_TOKEN in the Vercel dashboard and
+   * the next upload picks it up on the new deployment with no code change.
+   */
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   if (token) {
     const { put } = await import("@vercel/blob");
@@ -54,7 +75,26 @@ export async function storeImage(
     return { url: res.url };
   }
 
-  // Local dev fallback: write under /public and serve statically.
+  /**
+   * No token. On Vercel the filesystem is READ-ONLY, so the fallback below
+   * cannot work there — it would throw EROFS from deep inside `fs.writeFile`
+   * and surface as an opaque "Could not store image". Fail fast instead, with a
+   * message that names the missing variable, so the cause is obvious in the
+   * response and in the logs rather than something to be reverse-engineered.
+   *
+   * Deliberately keyed on `process.env.VERCEL` and not on NODE_ENV: a
+   * self-hosted production deployment has a writable disk and is *meant* to use
+   * the fallback (that is what `src/app/uploads/[...path]/route.ts` serves).
+   * Only Vercel is excluded, and only because of the read-only disk.
+   */
+  if (process.env.VERCEL) {
+    throw new StorageNotConfiguredError(
+      "Image storage is not configured. BLOB_READ_WRITE_TOKEN is missing, and Vercel's filesystem is read-only so there is no local fallback. Add the token in the Vercel dashboard (Storage → Blob store), then redeploy — uploads resume immediately, no code change needed."
+    );
+  }
+
+  // Local / self-hosted fallback: write under /public and serve via the
+  // /uploads/[...path] route.
   const publicDir = path.join(process.cwd(), "public", "uploads", keyParts.yardId, date, folder);
   await fs.mkdir(publicDir, { recursive: true });
   await fs.writeFile(path.join(publicDir, name), bytes);

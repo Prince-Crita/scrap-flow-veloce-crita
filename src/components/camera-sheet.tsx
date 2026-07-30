@@ -152,11 +152,25 @@ export function CameraSheet({
         <div className="sheet" onClick={(e) => e.stopPropagation()}>
           <div className="sheetHandle" />
 
-        <input ref={frontRef} type="file" accept="image/*" capture="environment" hidden
+        {/*
+          `capture="environment"` is deliberately ABSENT.
+
+          That attribute does not mean "offer the camera" — it means "use the
+          camera and nothing else". iOS and Android honour it by launching the
+          rear camera directly, with no way to reach Photos/Gallery or Files, so
+          a slip already photographed (or one sent over WhatsApp, or a re-upload
+          after a failed save) could not be attached at all.
+
+          With only `accept="image/*"`, both mobile platforms show their native
+          chooser — Take Photo *and* Photo Library / Files — so live capture is
+          still one tap and the gallery becomes reachable. Desktop is unaffected:
+          it ignored `capture` and opened a file picker either way.
+        */}
+        <input ref={frontRef} type="file" accept="image/*" hidden
           onChange={(e) => e.target.files?.[0] && onFront(e.target.files[0])} />
-        <input ref={backRef} type="file" accept="image/*" capture="environment" hidden
+        <input ref={backRef} type="file" accept="image/*" hidden
           onChange={(e) => e.target.files?.[0] && onBack(e.target.files[0])} />
-        <input ref={matRef} type="file" accept="image/*" capture="environment" hidden
+        <input ref={matRef} type="file" accept="image/*" hidden
           onChange={(e) => e.target.files?.[0] && onMaterial(e.target.files[0])} />
 
         {step === 1 && (

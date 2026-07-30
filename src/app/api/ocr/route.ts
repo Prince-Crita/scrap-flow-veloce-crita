@@ -3,7 +3,7 @@ import { requireYard, parseBody, ok } from "@/lib/api";
 import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/lib/image-validate";
 import { tooManyRequests } from "@/lib/rate-limit";
 import { rateLimitShared } from "@/lib/rate-limit-shared";
-import { awaitOcrReady, ocrStatus } from "@/lib/ocr-supervisor";
+import { awaitOcrReady, ocrStatus, resolveOcrServiceUrl } from "@/lib/ocr-supervisor";
 import { snapToKnownPlate, SNAP_HISTORY_LIMIT, SNAP_CONFIDENCE_CEILING } from "@/lib/plate-match";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +47,14 @@ export async function POST(req: Request) {
     }
   }
 
-  const url = process.env.OCR_SERVICE_URL;
+  /**
+   * Resolved, not read raw: `resolveOcrServiceUrl()` also rejects a loopback URL
+   * when running on Vercel, where no sidecar can exist on localhost. Reading the
+   * env var directly meant a leftover `http://localhost:8000` was still dialled
+   * on every capture, burning the fetch timeout before falling back. Recognition
+   * logic below is untouched — only how the endpoint is resolved changed.
+   */
+  const url = resolveOcrServiceUrl();
   const secret = process.env.OCR_SERVICE_SECRET ?? "";
   if (!url) {
     return ok({ plate: null, confidence: 0, crop: null, fallback: true, reason: "OCR service not configured" });

@@ -157,7 +157,13 @@ async function main() {
     const ocrCallers: string[] = [];
     for (const f of tsx) {
       const t = await fs.readFile(f, "utf8");
-      if (/capture="environment"/.test(t)) withCapture.push(path.relative(src, f));
+      // Locator note: this used to key on `capture="environment"`. That attribute
+      // was removed from the camera inputs on purpose — it forced the camera and
+      // made Photos/Gallery unreachable on iOS and Android. `captureGrid` is the
+      // capture sheet's own layout class and is unique to that component, so the
+      // assertion below ("exactly one shared capture implementation") is
+      // unchanged in meaning; only the fingerprint moved.
+      if (/captureGrid/.test(t)) withCapture.push(path.relative(src, f));
       if (/"\/api\/ocr"/.test(t) && !f.endsWith(path.join("api", "ocr", "route.ts"))) {
         ocrCallers.push(path.relative(src, f));
       }

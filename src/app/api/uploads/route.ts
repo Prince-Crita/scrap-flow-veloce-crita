@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { requireYard, parseBody, ok, fail } from "@/lib/api";
-import { storeImage } from "@/lib/storage";
+import { storeImage, StorageNotConfiguredError } from "@/lib/storage";
 import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/lib/image-validate";
 import { tooManyRequests } from "@/lib/rate-limit";
 import { rateLimitShared } from "@/lib/rate-limit-shared";
@@ -47,6 +47,13 @@ export async function POST(req: Request) {
     });
     return ok({ url: stored.url, bytes: verified.byteLength, format: verified.format });
   } catch (e) {
+    // Misconfiguration, not a bug: say which variable is missing and answer 503
+    // so the caller can tell "fix your settings" from "this broke". Same JSON
+    // envelope as every other failure — the endpoint's contract is unchanged.
+    if (e instanceof StorageNotConfiguredError) {
+      console.error("[upload] storage not configured:", e.message);
+      return fail("STORAGE_NOT_CONFIGURED", e.message, 503);
+    }
     console.error("upload failed", e);
     return fail("UPLOAD_FAILED", "Could not store image", 500);
   }

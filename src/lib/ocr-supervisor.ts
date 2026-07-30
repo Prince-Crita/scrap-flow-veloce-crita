@@ -111,14 +111,55 @@ function set(next: Partial<OcrStatus>) {
   Object.assign(status, next);
 }
 
-function baseUrl(): string | null {
+/**
+ * Hosts that only ever mean "this machine". On a serverless platform there is no
+ * sidecar on loopback, so a URL pointing here is a leftover local value, not a
+ * service — almost always `.env` copied into the dashboard verbatim.
+ */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
+
+/**
+ * The single place OCR_SERVICE_URL is interpreted.
+ *
+ * Exported because `/api/ocr` — the actual recognition hot path — used to read
+ * `process.env.OCR_SERVICE_URL` raw, so a loopback value slipped straight past
+ * the supervisor and every capture on Vercel spent its timeout budget dialling a
+ * host that cannot exist. Both callers now resolve through here, so "unusable
+ * URL" means the same thing to the supervisor's health check and to recognition.
+ *
+ * Returns a trailing-slash-normalised URL, or null when there is nothing usable.
+ */
+export function resolveOcrServiceUrl(): string | null {
   const u = process.env.OCR_SERVICE_URL;
-  return u ? u.replace(/\/$/, "") : null;
+  if (!u) return null;
+
+  /**
+   * Reject a loopback URL when running on Vercel.
+   *
+   * Without this the supervisor spends every cold start dialling a host that
+   * cannot exist, and each capture waits on `awaitOcrReady()` before falling
+   * back to manual entry — a slow, silent failure that looks like the OCR model
+   * is broken. Treating it as "not configured" makes the state honest: OCR
+   * reports unavailable, plate entry stays manual, and nothing blocks the yard.
+   *
+   * Scoped to Vercel only, so local development against
+   * `http://localhost:8000` is completely unaffected.
+   */
+  if (process.env.VERCEL) {
+    try {
+      if (LOOPBACK_HOSTS.has(new URL(u).hostname.toLowerCase())) return null;
+    } catch {
+      // Unparseable URL is equally unusable — treat it as not configured
+      // rather than handing a malformed value to fetch().
+      return null;
+    }
+  }
+  return u.replace(/\/$/, "");
 }
 
 /** Ask the service how it is. Never throws. */
 async function probe(): Promise<{ ok: boolean; components: Record<string, boolean> | null; detail: string }> {
-  const url = baseUrl();
+  const url = resolveOcrServiceUrl();
   if (!url) return { ok: false, components: null, detail: "OCR_SERVICE_URL is not set" };
   try {
     const controller = new AbortController();
@@ -170,7 +211,7 @@ function pythonCommand(): string {
 }
 
 function servicePort(): string {
-  const url = baseUrl();
+  const url = resolveOcrServiceUrl();
   if (!url) return "8000";
   try {
     return new URL(url).port || "8000";
@@ -300,7 +341,7 @@ function scheduleCheck() {
  * exactly the manual intervention this module exists to remove.
  */
 async function tick() {
-  const url = baseUrl();
+  const url = resolveOcrServiceUrl();
   if (!url) {
     set({ state: "disabled", detail: "OCR_SERVICE_URL is not set", url: null });
     return;
@@ -376,9 +417,18 @@ export function startOcrSupervisor(): void {
   if (state.started) return;
   state.started = true;
 
-  const url = baseUrl();
+  const url = resolveOcrServiceUrl();
   if (!url) {
-    set({ state: "disabled", detail: "OCR_SERVICE_URL is not set" });
+    // Distinguish "never configured" from "configured with a value that cannot
+    // work here", so the admin OCR panel points at the actual problem instead of
+    // claiming the variable is absent when it is in fact set to localhost.
+    const raw = process.env.OCR_SERVICE_URL;
+    set({
+      state: "disabled",
+      detail: raw
+        ? `OCR_SERVICE_URL points at ${raw}, which is unreachable from this deployment — set it to a hosted OCR service. Plate entry stays manual.`
+        : "OCR_SERVICE_URL is not set",
+    });
     return;
   }
   set({ state: "starting", detail: "initialising", url });
