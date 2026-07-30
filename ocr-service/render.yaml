@@ -1,0 +1,49 @@
+# Render blueprint for the ANPR sidecar.
+#
+# WHY THIS FILE EXISTS
+# The Next.js app cannot host this service. In local development
+# `src/lib/ocr-supervisor.ts` spawns it as a child process on localhost:8000,
+# which is why ANPR works there. Vercel has no Python runtime and a serverless
+# function has no persistent process to spawn one into, so in production the
+# service has to live somewhere of its own. This makes that a one-step deploy.
+#
+# Render is only one option — any host that builds a Dockerfile works
+# (Railway, Fly.io, Google Cloud Run, or a plain VPS). Nothing in the app is
+# Render-specific; the app only needs a reachable HTTPS URL.
+#
+# HOW TO USE
+#   1. Render dashboard -> New -> Blueprint -> point at this repo.
+#   2. Set OCR_SERVICE_SECRET to the SAME value as the Vercel env var of that
+#      name (Render will not read it from this file — it is marked sync: false).
+#   3. Deploy, then confirm https://<your-service>.onrender.com/health is 200.
+#   4. In Vercel, set OCR_SERVICE_URL to that base URL (no trailing /health)
+#      and redeploy. No application code changes are needed.
+#
+# SIZING — READ THIS
+# ultralytics (torch) + paddlepaddle + paddleocr resident together need roughly
+# 2 GB of RAM. A 512 MB free instance will OOM during model load and the service
+# will restart in a loop, which the app reports as "unreachable". Pick an
+# instance with >= 2 GB. The first boot also has to install several hundred MB of
+# wheels, so expect a slow initial build.
+services:
+  - type: web
+    name: veloce-anpr
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # >= 2 GB RAM. Anything smaller OOMs on model load (see SIZING above).
+    plan: standard
+    healthCheckPath: /health
+    envVars:
+      # Must match OCR_SERVICE_SECRET in the Vercel project. sync: false keeps
+      # the value out of the repo — set it in the Render dashboard.
+      - key: OCR_SERVICE_SECRET
+        sync: false
+      # Bare filename on purpose: resolve_model() in main.py searches
+      # ocr-service/models/ first, so this matches the committed weights. A
+      # "models/" prefix would resolve only by falling through to a later
+      # search path.
+      - key: YOLO_MODEL
+        value: license_plate_detector.pt
+      - key: PORT
+        value: "8000"

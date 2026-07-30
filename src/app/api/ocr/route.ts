@@ -56,7 +56,24 @@ export async function POST(req: Request) {
    */
   const url = resolveOcrServiceUrl();
   const secret = process.env.OCR_SERVICE_SECRET ?? "";
+
+  /**
+   * Diagnostic line for the production ANPR path.
+   *
+   * Deliberately logs the ORIGIN only (`new URL(...).origin`) and never the
+   * secret, the image bytes or the plate — an origin is what you need to tell
+   * "pointing at the wrong host" from "host is up but rejecting us", and it is
+   * the one field that was impossible to confirm from outside. `hasSecret` is a
+   * boolean, never the value.
+   */
+  const startedAt = Date.now();
+  const origin = url ? safeOrigin(url) : null;
+  console.log(
+    `[ocr] request received · endpoint=${origin ?? "unresolved"} · hasSecret=${secret.length > 0} · back=${!!body.data.imageBack}`
+  );
+
   if (!url) {
+    console.log(`[ocr] skipped · reason=not-configured · ${Date.now() - startedAt}ms`);
     return ok({ plate: null, confidence: 0, crop: null, fallback: true, reason: "OCR service not configured" });
   }
 
@@ -71,6 +88,9 @@ export async function POST(req: Request) {
   const ready = await awaitOcrReady();
   if (!ready) {
     const s = ocrStatus();
+    console.log(
+      `[ocr] not ready · state=${s.state} · detector=${s.components ? JSON.stringify(s.components) : "unknown"} · ${Date.now() - startedAt}ms`
+    );
     return ok({
       plate: null,
       confidence: 0,
@@ -90,6 +110,7 @@ export async function POST(req: Request) {
       signal: controller.signal,
     });
     clearTimeout(timeout);
+    console.log(`[ocr] service responded · status=${res.status} · ${Date.now() - startedAt}ms`);
 
     if (!res.ok) {
       return ok({ plate: null, confidence: 0, crop: null, fallback: true, reason: `OCR service ${res.status}` });
@@ -154,7 +175,26 @@ export async function POST(req: Request) {
       fallback: false,
     });
   } catch (e) {
-    console.error("OCR proxy error", e);
+    // Distinguish the 15s abort from a connection failure: "timed out" and
+    // "nothing listening / DNS failed" call for completely different fixes, and
+    // the old single line could not tell them apart.
+    const aborted = e instanceof Error && e.name === "AbortError";
+    console.error(
+      `[ocr] request failed · endpoint=${origin} · kind=${aborted ? "timeout" : "connect-error"} · ${Date.now() - startedAt}ms ·`,
+      e instanceof Error ? e.message : e
+    );
     return ok({ plate: null, confidence: 0, crop: null, fallback: true, reason: "OCR service unreachable" });
+  }
+}
+
+/**
+ * Origin of a URL for logging — host and scheme only, never a path, query or
+ * credentials, so a diagnostic line can never leak a signed URL or token.
+ */
+function safeOrigin(u: string): string {
+  try {
+    return new URL(u).origin;
+  } catch {
+    return "invalid-url";
   }
 }

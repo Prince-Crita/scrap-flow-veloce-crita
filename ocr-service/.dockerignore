@@ -1,0 +1,9 @@
+# The Dockerfile does `COPY . .`, which otherwise ships local-only bulk into the
+# image. The model weights (*.pt) are deliberately NOT excluded — the service
+# loads them at startup and they must be in the image.
+__pycache__/
+*.pyc
+.venv/
+benchmark/
+test_plate.py
+.env
