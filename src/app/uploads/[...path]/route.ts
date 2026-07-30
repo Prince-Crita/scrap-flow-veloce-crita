@@ -60,6 +60,41 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path: string[]
   const type = TYPES[ext];
   if (!type) return notFound();
 
+  /**
+   * Blob-backed read, tried first whenever a token exists.
+   *
+   * Uploads go to a PRIVATE Blob store, so the stored bytes are not reachable by
+   * URL — this route is the only way to see them, and middleware already
+   * requires a session for /uploads, so the session check is not duplicated
+   * here (same policy as the disk path below, deliberately unchanged).
+   *
+   * The blob's pathname is exactly this route's path minus the leading slash,
+   * because `storeImage` writes `uploads/<yardId>/<date>/<lot>/<name>` and
+   * returns `/<that>`. One key shape, one lookup.
+   *
+   * Falls through to disk on a miss rather than 404-ing, so a yard that has rows
+   * from the local/self-hosted era keeps rendering them after Blob is switched on.
+   */
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  if (token) {
+    try {
+      const { get } = await import("@vercel/blob");
+      const found = await get(["uploads", ...parts].join("/"), { access: "private", token });
+      if (found && found.statusCode === 200) {
+        return new NextResponse(found.stream, {
+          headers: {
+            "Content-Type": found.blob.contentType || type,
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
+    } catch (e) {
+      // A Blob outage must not take out images that also exist on disk.
+      console.error("[uploads] blob read failed; falling back to disk", e);
+    }
+  }
+
   let bytes: Buffer;
   try {
     const stat = await fs.stat(target);

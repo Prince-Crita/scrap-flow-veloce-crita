@@ -67,12 +67,34 @@ export async function storeImage(
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   if (token) {
     const { put } = await import("@vercel/blob");
-    const res = await put(relPath, bytes, {
-      access: "public",
+    /**
+     * `access: "private"` — the store is a PRIVATE Blob store, and it rejects a
+     * public write outright ("Cannot use public access on a private store"),
+     * which is what every production upload was failing on.
+     *
+     * Private is also the correct policy here: these are weighbridge slips and
+     * vehicle plates belonging to one yard, never public assets. It matches the
+     * `Cache-Control: private` the local serving route already sets.
+     */
+    await put(relPath, bytes, {
+      access: "private",
       token,
       contentType: CONTENT_TYPE[ext],
     });
-    return { url: res.url };
+    /**
+     * Return the RELATIVE path, not the absolute blob URL.
+     *
+     * A private blob is not fetchable by URL, so handing one to an <img> would
+     * render a broken image. `/uploads/...` is served by
+     * `src/app/uploads/[...path]/route.ts`, which is session-gated by middleware
+     * and now reads through to Blob — so the browser gets the bytes only with a
+     * valid session.
+     *
+     * This is also the shape already in the database (verified: all 22 existing
+     * image rows are relative `/uploads/...`), so old and new rows resolve
+     * through exactly the same path and no schema or data migration is needed.
+     */
+    return { url: `/${relPath}` };
   }
 
   /**
