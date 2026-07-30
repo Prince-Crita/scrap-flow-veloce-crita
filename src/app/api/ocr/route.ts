@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { requireYard, parseBody, ok } from "@/lib/api";
 import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/lib/image-validate";
-import { rateLimitShared, tooManyRequests } from "@/lib/rate-limit";
+import { tooManyRequests } from "@/lib/rate-limit";
+import { rateLimitShared } from "@/lib/rate-limit-shared";
 import { awaitOcrReady, ocrStatus } from "@/lib/ocr-supervisor";
 import { snapToKnownPlate, SNAP_HISTORY_LIMIT, SNAP_CONFIDENCE_CEILING } from "@/lib/plate-match";
 

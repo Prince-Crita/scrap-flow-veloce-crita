@@ -1,0 +1,25 @@
+# Files uploaded to Vercel for the build but never used by it.
+#
+# Nothing here is referenced by any code path that runs on Vercel. Kept in git
+# (a developer cloning the repo still gets all of it) — only excluded from the
+# deployment package.
+
+# ---- Python ANPR sidecar -------------------------------------------------
+# There is no Python runtime on Vercel and a serverless function has no
+# persistent process to host one, so the supervisor's local spawn is skipped
+# there outright (see the `process.env.VERCEL` guard in src/lib/ocr-supervisor.ts).
+# OCR still works in production via OCR_SERVICE_URL pointing at a hosted
+# service, which is reached over plain fetch and needs none of these files.
+# This is ~6 MB, most of it the license-plate model weights.
+ocr-service/
+
+# ---- Test suite ----------------------------------------------------------
+# tsx/Playwright suites and their fixtures. Never imported by src/.
+tests/
+
+# ---- Documentation ------------------------------------------------------
+docs/
+
+# ---- Local-only artefacts (also gitignored; listed for safety) ----------
+backups/
+screenshots/

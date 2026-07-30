@@ -2,7 +2,8 @@ import { z } from "zod";
 import { requireYard, parseBody, ok, fail } from "@/lib/api";
 import { storeImage } from "@/lib/storage";
 import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/lib/image-validate";
-import { rateLimitShared, tooManyRequests } from "@/lib/rate-limit";
+import { tooManyRequests } from "@/lib/rate-limit";
+import { rateLimitShared } from "@/lib/rate-limit-shared";
 
 export const dynamic = "force-dynamic";
 

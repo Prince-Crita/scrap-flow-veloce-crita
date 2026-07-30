@@ -132,56 +132,18 @@ export function __resetRateLimits() {
   sinceSweep = 0;
 }
 
-/* ─────────────── shared (multi-instance) limiter ─────────────── */
-
-import { prisma } from "@/lib/prisma";
-
-/**
- * Postgres-backed fixed-window limiter, shared across instances.
+/* ─────────────── shared (multi-instance) limiter ───────────────
  *
- * The in-process limiter above granted each instance its own budget, so the real
- * limit was `configured × instances`. This is one atomic upsert on
- * (bucket, windowStart) — no pub/sub, no session state — so it works over the
- * pooled connection like every other query.
+ * `rateLimitShared()` and `sweepSharedRateLimits()` used to live here. They now
+ * live in `src/lib/rate-limit-shared.ts` and MUST stay there.
  *
- * The sync `rateLimit()` above is deliberately KEPT for the Edge middleware
- * (auth), where Prisma cannot run. Do not merge the two.
+ * This module is imported by `middleware.ts`, which runs on the Edge runtime. An
+ * ES module is bundled as one unit, so the single `import { prisma }` those two
+ * functions needed pulled the entire Prisma client — and its 2.2 MB WASM query
+ * engine — into the middleware bundle, putting the Edge Function at 1.04 MB
+ * against Vercel's 1 MB limit and failing the deployment at "Deploying outputs".
  *
- * Fails OPEN: if the counter query fails, the request proceeds. A database blip
- * must not lock a yard out of uploading weighbridge photos; abuse protection is
- * secondary to the yard being able to work.
+ * Keep this file free of Prisma (and of any other Node-only dependency) so it
+ * stays Edge-safe. The sync in-memory `rateLimit()` above is what middleware
+ * uses; DB-backed limiting belongs in the sibling module.
  */
-export async function rateLimitShared(name: RateLimitName, identity: string): Promise<RateLimitResult> {
-  const rule = RATE_LIMITS[name];
-  const now = Date.now();
-  const windowStart = now - (now % rule.windowMs);
-  const bucket = `${name}:${identity}`;
-  const retryAfter = Math.max(1, Math.ceil((windowStart + rule.windowMs - now) / 1000));
-
-  try {
-    const row = await prisma.rateLimitCounter.upsert({
-      where: { bucket_windowStart: { bucket, windowStart: BigInt(windowStart) } },
-      create: { bucket, windowStart: BigInt(windowStart), count: 1 },
-      update: { count: { increment: 1 } },
-      select: { count: true },
-    });
-    if (row.count > rule.limit) {
-      return { ok: false, remaining: 0, retryAfter, limit: rule.limit };
-    }
-    return { ok: true, remaining: Math.max(0, rule.limit - row.count), retryAfter, limit: rule.limit };
-  } catch (e) {
-    console.error("[rate-limit] shared counter failed; allowing request", e);
-    return { ok: true, remaining: rule.limit, retryAfter: 0, limit: rule.limit };
-  }
-}
-
-/** Delete windows that can no longer be current. Safe to call any time. */
-export async function sweepSharedRateLimits(olderThanMs = 10 * 60_000): Promise<number> {
-  try {
-    const cutoff = BigInt(Date.now() - olderThanMs);
-    const r = await prisma.rateLimitCounter.deleteMany({ where: { windowStart: { lt: cutoff } } });
-    return r.count;
-  } catch {
-    return 0;
-  }
-}
