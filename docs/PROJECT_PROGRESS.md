@@ -973,6 +973,63 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
 
 ## Changelog
 
+- **2026-07-30 (production ANPR — diagnosed, instrumented, blocked on hosting)** —
+  **ANPR does not work on Vercel because the Python service is not deployed
+  anywhere. That is infrastructure, not code: no application change can fix it.
+  The recognition pipeline was not touched.**
+
+  **Why it works locally and not in production.** `src/lib/ocr-supervisor.ts`
+  **spawns** the FastAPI service as a child process on `localhost:8000` — the app
+  starts its own OCR server, which is precisely why development "just works".
+  Vercel has no Python runtime and a serverless function has no persistent process
+  to spawn one into, so in production there is no OCR service in existence to
+  reach. `OCR_SERVICE_URL` is still `http://localhost:8000`, which inside a Lambda
+  means that Lambda's own loopback.
+
+  **Confirmed from production, not inferred** — `/api/admin/ocr-status` as ADMIN
+  returned: *"OCR_SERVICE_URL points at http://localhost:8000, which is unreachable
+  from this deployment"*.
+
+  **Ruled out on evidence, in the order the brief asked for them:**
+  - **CORS / HTTPS / mixed content — not applicable.** `/api/ocr` calls the service
+    **server-side** from the route handler. No browser policy is in play; the CSP's
+    `connect-src 'self'` governs the browser only. An `http://` sidecar would be
+    reachable server-side, though a hosted one will have TLS anyway.
+  - **Authentication — not the cause, and already correct.** The new log line
+    reports `hasSecret=true`, so `OCR_SERVICE_SECRET` is set in Vercel. The request
+    never reaches a host, so the secret is never evaluated.
+  - **Upload pipeline — not involved.** Verified working end to end in production
+    (upload → private Blob → authenticated re-fetch, 200/`image/png`). `/api/ocr`
+    receives image **bytes in the request body**, never a Blob URL, so Blob
+    permissions and signed URLs play no part in ANPR whatsoever.
+  - **Timeout — not reached.** The call is skipped in 0 ms at URL resolution.
+
+  **What changed (observability and deployability only):**
+  - `/api/ocr` — production-safe logging: endpoint **origin only** (never path,
+    query or credentials), `hasSecret` as a boolean, response status, detector
+    components, elapsed ms. The failure path now distinguishes a 15 s **timeout**
+    from a **connect error**, which the previous single `console.error` could not —
+    they call for opposite fixes. Verified live: `[ocr] request received ·
+    endpoint=unresolved · hasSecret=true · back=false`.
+  - `ocr-service/render.yaml` — Docker blueprint making the sidecar a one-step
+    deploy, and documenting the constraint that actually bites: torch +
+    paddlepaddle resident together need **~2 GB RAM**, so a 512 MB free instance
+    OOMs during model load and restart-loops, which the app then reports as
+    "unreachable". `YOLO_MODEL` is the bare filename because `resolve_model()`
+    searches `ocr-service/models/` first.
+  - `ocr-service/.dockerignore` — keeps `__pycache__`/`benchmark` out of the image.
+    Model weights deliberately **not** excluded; the service loads them at boot.
+
+  **Unchanged and re-verified:** manual plate entry still works (`fallback: true`,
+  no hang, no crash), and uploads did not regress (upload → 200, re-fetch → 200,
+  70 bytes).
+
+  **⚠️ Still required to restore ANPR — needs account credentials:** deploy
+  `ocr-service/` to any Docker host (Render/Railway/Fly/Cloud Run/VPS), confirm
+  `/health` returns 200, then set `OCR_SERVICE_URL` in Vercel to that HTTPS base
+  URL and redeploy. **No application code change is needed** once that is done —
+  the resolver, the secret and the fallback are all already in place.
+
 - **2026-07-30 (UI refinement — preview frame removed on real devices)** — **The yard
   app now fills the screen on phones and tablets. CSS only, in one file. No markup,
   business logic, API, schema, auth, OCR, realtime or calculation was touched.**
