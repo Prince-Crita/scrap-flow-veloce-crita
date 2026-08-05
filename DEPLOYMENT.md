@@ -349,6 +349,12 @@ machine-specific, so it is gitignored — Android Studio recreates it on first o
   the system browser rather than inside the WebView holding the session.
 - Brand palette in `android/app/src/main/res/values/colors.xml` and a dark launch
   background, so the gap before the WebView paints is not a white flash.
+- Launcher icons are the company logo, rendered from `public/icon.svg` — the same
+  vector the web app, the PWA manifest and the in-app header mark already use. Every
+  stock asset the toolkit ships (its blue mark, the default Android adaptive-icon
+  vectors, the bundled splash bitmaps) has been removed. Re-render with
+  `npm run android:icons` if the logo ever changes; it rasterises the SVG at each
+  density and does nothing else to it.
 
 ### After changing anything
 
