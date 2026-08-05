@@ -288,3 +288,70 @@ These are load-bearing. Each one has already caused a real problem.
   bitten this codebase four times.
 - Do not run `db:reset`, `prisma migrate reset`, or `db:seed` against production.
 - Do not publish `crop` images or OCR payloads to any external service.
+
+---
+
+## 12. Android APK (Capacitor)
+
+The APK is a **WebView onto the deployed site**, not a bundled copy of it. This app
+is server-rendered with API routes, Auth.js sessions and Prisma; `next export` would
+drop every endpoint the yard workflow runs on, so there is nothing to bundle. The
+practical consequence is good: a fix ships by deploying, not by reinstalling an APK
+on every phone in the yard.
+
+### Layout
+
+| Piece | Where |
+|---|---|
+| Capacitor config | `capacitor.config.ts` |
+| Offline fallback page (the `webDir`) | `capacitor/www/index.html` |
+| Android project | `android/` (committed; its build output is not) |
+| App id / name | `in.crita.scrapflow` / **Scrap Flow** |
+| Server the APK loads | `https://scrap-flow-veloce-crita.vercel.app` |
+
+`server.url` is the production origin and `cleartext` is `false`, so a release build
+cannot silently target `http://localhost`. To point a device at your own machine for
+development, set `CAPACITOR_SERVER_URL` before syncing — never commit that.
+
+### Build a release APK
+
+```bash
+npm run cap:sync          # copy webDir + config into android/
+npm run cap:open          # opens the project in Android Studio
+```
+
+Then in Android Studio: **Build → Generate Signed App Bundle / APK → APK**, create or
+select a keystore, choose the `release` variant. The keystore and `*.apk` are
+gitignored deliberately — signing material never belongs in the repository.
+
+Headless equivalent, if you prefer the command line:
+
+```bash
+cd android && ./gradlew assembleRelease     # unsigned APK in app/build/outputs/apk/release/
+```
+
+Requires **JDK 21** (Capacitor 8 compiles at Java 21) and the Android SDK with
+platform 36 / build-tools 36. `android/local.properties` carries `sdk.dir` and is
+machine-specific, so it is gitignored — Android Studio recreates it on first open.
+
+### What was configured, and why
+
+- `CAMERA` permission plus `uses-feature … required="false"`. The yard captures
+  photographs through `<input type="file" accept="image/*" capture="environment">`;
+  Capacitor's file chooser only offers the camera when the app declares the
+  permission, and a phone without a camera must still be able to install the app.
+- `allowBackup="false"` and `data_extraction_rules.xml` exclude everything from both
+  cloud backup and device-to-device transfer. The WebView holds an authenticated
+  session cookie for a yard.
+- `usesCleartextTraffic="false"` and `allowMixedContent: false`. Weighbridge slips,
+  vehicle plates and session cookies do not travel over plain HTTP.
+- `allowNavigation` is limited to the production host, so an external link opens in
+  the system browser rather than inside the WebView holding the session.
+- Brand palette in `android/app/src/main/res/values/colors.xml` and a dark launch
+  background, so the gap before the WebView paints is not a white flash.
+
+### After changing anything
+
+`npm run cap:sync` regenerates `android/app/src/main/assets/` from
+`capacitor.config.ts` and `capacitor/www/`. Those generated assets are gitignored;
+the rest of `android/` is committed because it is edited (manifest, resources).

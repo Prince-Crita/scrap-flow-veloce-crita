@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Veloce palette, overriding the generic indigo/pink that ships with the
+    capacitor-android library module. Same token values as the web app's
+    src/app/globals.css, so the launcher background, splash and system chrome
+    match the product rather than announcing the wrapper it was built with.
+-->
+<resources>
+    <!-- brand #2e8b4f (veloce chevron green) -->
+    <color name="colorPrimary">#2E8B4F</color>
+    <!-- ink #0b1f15 (deep forest), the status bar during launch -->
+    <color name="colorPrimaryDark">#0B1F15</color>
+    <!-- orange #f59e2b -->
+    <color name="colorAccent">#F59E2B</color>
+    <!-- Launcher icon background for adaptive icons -->
+    <color name="ic_launcher_background">#0B1F15</color>
+    <!-- Window background before the WebView paints, so there is no white flash -->
+    <color name="splashBackground">#0B1F15</color>
+</resources>

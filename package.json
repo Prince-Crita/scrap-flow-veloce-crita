@@ -36,6 +36,8 @@
     "test:responsive": "tsx tests/responsive.test.ts",
     "demo:restore": "tsx prisma/restore-yard1-demo.ts",
     "demo:prepare": "tsx prisma/prepare-demo.ts",
+    "cap:sync": "cap sync android",
+    "cap:open": "cap open android",
     "test:all": "npm run test:sandbox-reset && npm run test:inward && npm run test:inward-sort && npm run test:sandbox-reset && npm run test:e2e && npm run test:prisma-retry && npm run test:isolation && npm run test:fixture-isolation && npm run test:admin && npm run test:lockout && npm run test:realtime && npm run test:idempotency && npm run test:inward-multi && npm run test:outward && npm run test:upload && npm run test:security-headers && npm run test:csp && npm run test:admin-records && npm run test:admin-outward && npm run test:units && npm run test:sort-types && npm run test:stock-adjust && npm run test:dashboard && npm run test:charts && npm run test:ui && npm run test:ocr && npm run test:ocr-bootstrap && npm run test:ocr-supervisor && npm run test:ocr-fallback && npm run test:plate-match && npm run test:inward-conversion && npm run test:verify-fixes && npm run test:ui-polish && npm run test:gamification && npm run test:responsive && npm run test:prototype && npm run db:verify && npm run test:performance",
     "test:inward-multi": "tsx tests/inward-multi.test.ts",
     "test:ocr": "python ocr-service/test_plate.py",
@@ -77,6 +79,8 @@
     "test:anpr-parity": "tsx tests/anpr-parity.test.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@prisma/client": "^6.1.0",
     "@tanstack/react-query": "^5.62.0",
     "@vercel/blob": "^2.6.1",
@@ -90,6 +94,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.0",

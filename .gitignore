@@ -88,3 +88,4 @@ ocr-service/*.pt
 # Android Studio / IntelliJ
 *.iml
 .idea/
+

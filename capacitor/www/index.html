@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Scrap Flow · Veloce</title>
+    <!--
+      Bundled fallback screen.
+
+      The APK is a wrapper around the deployed application (see `server.url` in
+      capacitor.config.ts), so this file is not the app — it is what the WebView
+      shows when the device cannot reach it. Capacitor requires `webDir` to
+      contain an index.html, and a blank white page on a dead connection reads
+      as a crash, so this says what actually happened and offers a retry.
+
+      Deliberately self-contained: no script, no font, no image request. If the
+      network is down, anything external would fail too.
+    -->
+    <style>
+      :root {
+        --ink: #0b1f15;
+        --panel: #12291c;
+        --line: #234933;
+        --brand: #2e8b4f;
+        --text: #f3f1ea;
+        --muted: #8fae9c;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: var(--ink);
+        color: var(--text);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom))
+          calc(24px + env(safe-area-inset-left));
+        text-align: center;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 32px 24px;
+        max-width: 360px;
+        width: 100%;
+      }
+      .mark {
+        font-size: 40px;
+        line-height: 1;
+        margin-bottom: 16px;
+      }
+      h1 {
+        font-size: 18px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin: 0 0 10px;
+      }
+      p {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+        margin: 0 0 22px;
+      }
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 12px;
+        background: var(--brand);
+        color: var(--text);
+        font: inherit;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 14px 20px;
+        width: 100%;
+        cursor: pointer;
+      }
+      button:active { opacity: 0.85; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="mark" aria-hidden="true">📡</div>
+      <h1>No connection</h1>
+      <p>
+        Scrap Flow needs a network connection to reach your yard. Check mobile data or Wi-Fi, then try
+        again — nothing you entered has been lost.
+      </p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

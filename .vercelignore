@@ -23,3 +23,10 @@ docs/
 # ---- Local-only artefacts (also gitignored; listed for safety) ----------
 backups/
 screenshots/
+
+# ---- Android wrapper ----------------------------------------------------
+# The Capacitor Android project and its offline shell are built by Android
+# Studio, never by Vercel. Nothing under `src/` imports them.
+android/
+capacitor/
+capacitor.config.ts
