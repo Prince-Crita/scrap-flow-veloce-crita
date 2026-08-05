@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useUI, levelProgress } from "@/components/ui-provider";
 import { fmt } from "@/lib/format";
 import { PhonePortal } from "@/components/phone-portal";
+import { ROLE_LABEL } from "@/lib/role-label";
 
 export type Profile = {
   name: string;
@@ -11,12 +12,6 @@ export type Profile = {
   yardName: string;
   yardCode: string;
   ownerName: string | null;
-};
-
-const ROLE_LABEL: Record<string, string> = {
-  OWNER: "Owner",
-  MANAGER: "Manager",
-  ADMIN: "Platform Admin",
 };
 
 /**

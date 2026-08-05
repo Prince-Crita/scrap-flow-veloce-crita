@@ -234,17 +234,34 @@ async function main() {
   await M.login(TEST_MANAGER.email, TEST_MANAGER.password);
   const mRead = await M.req("/api/sort-types");
   check("a manager CAN read the tree", mRead.status === 200, String(mRead.status));
+  /**
+   * The Manager now maintains the sort tree too, with exactly the Owner's CRUD
+   * and exactly the Owner's validations: the Manager is the role that actually
+   * runs the segregation, so curating what it sorts into is its work.
+   */
   const mCreate = await M.send("/api/sort-types", { materialId: ms.id, name: `Manager ${uniq}` });
-  check("a manager cannot create", mCreate.status === 403 || mCreate.status === 401, String(mCreate.status));
-  const mPatch = await M.send(`/api/sort-types/${newId}`, { name: `Manager ${uniq}` }, "PATCH");
-  check("a manager cannot rename", mPatch.status === 403 || mPatch.status === 401, String(mPatch.status));
-  const mDelete = await M.send(`/api/sort-types/${newId}`, undefined, "DELETE");
-  check("a manager cannot deactivate", mDelete.status === 403 || mDelete.status === 401, String(mDelete.status));
-  check("nothing a manager attempted landed", (await prisma.sku.findUniqueOrThrow({ where: { id: newId } })).name === renamed);
+  check("a manager CAN create", mCreate.status === 200 || mCreate.status === 201, String(mCreate.status));
+  const mCreated = await prisma.sku.findFirst({ where: { yardId, name: `Manager ${uniq}` } });
+  check("the manager's row really landed", !!mCreated);
+  // Tracked so the suite still leaves the sandbox exactly as it found it.
+  if (mCreated) created.push(mCreated.id);
+  const mPatch = await M.send(`/api/sort-types/${mCreated!.id}`, { name: `Manager ${uniq} R` }, "PATCH");
+  check("a manager CAN rename", mPatch.status === 200, String(mPatch.status));
   check(
-    "no manager-created row exists",
-    (await prisma.sku.count({ where: { yardId, name: `Manager ${uniq}` } })) === 0
+    "the rename landed",
+    (await prisma.sku.findUniqueOrThrow({ where: { id: mCreated!.id } })).name === `Manager ${uniq} R`
   );
+  // Same validations as the Owner: a duplicate name is refused for either role.
+  const mDupe = await M.send("/api/sort-types", { materialId: ms.id, name: `Manager ${uniq} R` });
+  check("a manager gets the SAME duplicate-name refusal", mDupe.status === 409 || mDupe.status === 422, String(mDupe.status));
+  const mDelete = await M.send(`/api/sort-types/${mCreated!.id}`, undefined, "DELETE");
+  check("a manager CAN deactivate", mDelete.status === 200, String(mDelete.status));
+  check(
+    "the deactivation landed",
+    (await prisma.sku.findUniqueOrThrow({ where: { id: mCreated!.id } })).visible === false
+  );
+  // The Owner's own row is untouched by any of the above.
+  check("the owner's row is unaffected", (await prisma.sku.findUniqueOrThrow({ where: { id: newId } })).name === renamed);
 
   const anon = await fetch(`${BASE}/api/sort-types`, { redirect: "manual" });
   check("an anonymous caller cannot read", anon.status >= 300, String(anon.status));

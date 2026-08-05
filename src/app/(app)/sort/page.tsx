@@ -9,6 +9,7 @@ import { fmt } from "@/lib/format";
 import { UNITS, fromKilograms, toKilograms, type UnitCode } from "@/lib/units";
 import { useUI } from "@/components/ui-provider";
 import { SortTypeSheet } from "@/components/sort-type-sheet";
+import { can } from "@/lib/permissions";
 
 type Lot = {
   /** Row identity. A multi-material load contributes several rows sharing one
@@ -18,7 +19,10 @@ type Lot = {
   lineId: string | null;
   lotNumber: string;
   materialLabel: string;
+  /** The unsorted balance still to allocate — not necessarily what arrived. */
   totalKg: number;
+  receivedKg?: number;
+  sortedKg?: number;
   vendorName: string;
   vehicleNumber: string;
   createdAt: string;
@@ -131,11 +135,14 @@ export default function SortPage() {
   const invalidateChannels = useInvalidateChannels();
   const { data: session } = useSession();
   /**
-   * Only these roles may edit the sort tree. A Manager still reads it — the
-   * target rows below come from the same tree — but is not offered the sheet.
+   * Who may edit the sort tree, read from the one permission matrix rather than
+   * re-listed here — that is what keeps the button and the API guard from
+   * drifting apart. Every in-yard role now qualifies: the Manager runs the
+   * segregation, so the Manager maintains its categories too.
    * The API enforces this independently; hiding the button is not the guard.
    */
-  const canManageSortTypes = session?.user?.role === "OWNER" || session?.user?.role === "ADMIN";
+  const role = session?.user?.role;
+  const canManageSortTypes = !!role && can(role, "sortType.write");
   const [sortTypesOpen, setSortTypesOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -145,7 +152,21 @@ export default function SortPage() {
 
   const lots = data?.lots ?? [];
   const [selectedLotKey, setSelectedLotKey] = useState<string | null>(null);
-  const lot = lots.find((l) => l.lotKey === selectedLotKey) ?? lots[0] ?? null;
+  /**
+   * With nothing explicitly selected, show the MOST RECENTLY RECEIVED lot.
+   *
+   * `/api/sort/pending` returns the queue oldest-first, and this defaulted to
+   * `lots[0]` — the oldest waiting lot. So an operator who had just weighed a
+   * load, walked to Sort and found some other lot on screen concluded the load
+   * had not arrived. It always had: it was in the selector all along, several
+   * entries down. The bug was never in the save, the stock, the queue or the
+   * invalidation — only in which of the queued lots the screen opened on.
+   *
+   * It read as a Walk-in problem because the older lots already on the queue
+   * carry a vendor name, so a load saved against that same vendor happened to
+   * look like the one that had just been saved.
+   */
+  const lot = lots.find((l) => l.lotKey === selectedLotKey) ?? lots[lots.length - 1] ?? null;
   const [alloc, setAlloc] = useState<Record<string, number>>({});
   const [waste, setWaste] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -181,6 +202,10 @@ export default function SortPage() {
   useEffect(() => {
     if (lot && lot.lotKey !== activeLotId) {
       setActiveLotId(lot.lotKey);
+      // Pin the auto-selection. Without this the selection is "whatever is last
+      // in the queue", so a load saved by someone else mid-run would slide under
+      // the operator and wipe the allocations they were part-way through.
+      setSelectedLotKey(lot.lotKey);
       setAlloc(Object.fromEntries(lot.targets.map((t) => [t.skuId, 0])));
       setWaste(0);
       setUnits({});
@@ -308,16 +333,22 @@ export default function SortPage() {
     });
   }
 
+  /**
+   * Completing no longer requires the lot to be fully segregated.
+   *
+   * Whatever is left stays in the mixed bucket, attributed to this load, and
+   * comes back up in the queue as an unsorted balance — so an operator can book
+   * the grades they finished today instead of holding the run open. The only
+   * floor is that SOMETHING was allocated.
+   */
   async function finish() {
-    if (left > 0) {
-      // A coarse unit cannot always land exactly on zero; KG stays available for
-      // the last few kilograms, which is why it is the default.
-      toast(`⚠ ${show(left)} ${suffix} still unsorted`);
+    if (used <= 0) {
+      toast("Allocate some weight first");
       return;
     }
     setSaving(true);
     try {
-      const res = await sendJson<{ lotNumber: string; wastagePct: number }>("/api/sort/complete", {
+      const res = await sendJson<{ lotNumber: string; wastagePct: number; remainingKg: number }>("/api/sort/complete", {
         loadId: lot!.loadId,
         lineId: lot!.lineId,
         wastageKg: waste,
@@ -328,7 +359,14 @@ export default function SortPage() {
       invalidateChannels("sort", "stock", "sales");
       setActiveLotId(null);
       await bump(120);
-      party("🎉", "SORT COMPLETE!", `Lot ${res.lotNumber} · wastage ${res.wastagePct}%`, "+120 XP");
+      party(
+        "🎉",
+        res.remainingKg > 0 ? "SORT SAVED!" : "SORT COMPLETE!",
+        res.remainingKg > 0
+          ? `Lot ${res.lotNumber} · ${show(res.remainingKg)} ${suffix} kept as unsorted balance`
+          : `Lot ${res.lotNumber} · wastage ${res.wastagePct}%`,
+        "+120 XP"
+      );
     } catch (e) {
       toast(e instanceof ApiError ? e.message : "Could not complete sort");
     } finally {
@@ -365,6 +403,12 @@ export default function SortPage() {
         <div className="big">
           {show(lot.totalKg)} {suffix}
         </div>
+        {(lot.sortedKg ?? 0) > 0 && (
+          <small style={{ fontFamily: "var(--mono)", color: "var(--orange)", display: "block", marginBottom: 4 }}>
+            Unsorted balance · {show(lot.receivedKg ?? lot.totalKg)} {suffix} received, {show(lot.sortedKg ?? 0)}{" "}
+            {suffix} already sorted
+          </small>
+        )}
         <small style={{ fontFamily: "var(--mono)", color: "var(--muted)" }}>
           {lot.vendorName} · 🚚 {lot.vehicleNumber} · {when}
         </small>
@@ -414,9 +458,12 @@ export default function SortPage() {
 
           <div className="remain">
             Unsorted left: {show(left)} {suffix}
+            {left > 0 && used > 0 && (
+              <em className="remainNote">kept as unsorted balance · sortable later</em>
+            )}
           </div>
 
-          <button className="cta" disabled={saving || left !== 0} onClick={finish}>
+          <button className="cta" disabled={saving || used <= 0} onClick={finish}>
             {saving ? "SAVING…" : "COMPLETE SORT · +120 XP"}
           </button>
         </>

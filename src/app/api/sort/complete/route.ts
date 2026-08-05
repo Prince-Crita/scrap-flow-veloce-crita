@@ -57,17 +57,8 @@ export async function POST(req: Request) {
   }
 
   const materialId = line ? line.materialId : load.materialId;
-  const unitKg = line ? line.quantityKg : load.totalKg;
+  const receivedKg = line ? line.quantityKg : load.totalKg;
   if (!materialId) return fail("BAD_LOT", "Lot has no material to segregate", 422);
-
-  const allocTotal = d.allocations.reduce((a, b) => a + b.kg, 0);
-  if (allocTotal + d.wastageKg !== unitKg) {
-    return fail(
-      "MISMATCH",
-      `Allocations + wastage (${allocTotal + d.wastageKg} kg) must equal lot total (${unitKg} kg)`,
-      422
-    );
-  }
 
   // Validate SKUs belong to the same parent material and are not mixed buckets.
   const skus = await prisma.sku.findMany({ where: { materialId } });
@@ -80,20 +71,55 @@ export async function POST(req: Request) {
     if (!targetIds.has(a.skuId)) return fail("BAD_SKU", "Invalid target SKU in allocation", 422);
   }
 
-  const wastagePct = Number(((d.wastageKg / unitKg) * 100).toFixed(2));
+  /**
+   * Partial segregation.
+   *
+   * A run no longer has to consume the whole lot. What is not allocated stays
+   * exactly where it already is — in the mixed bucket, still attributed to this
+   * load — and the line stays RECEIVED so it comes back up in the Sort queue as
+   * an unsorted balance. Nothing is written off, moved, or guessed into a
+   * category.
+   *
+   * The balance is DERIVED (received minus every run booked against this load +
+   * mixed bucket) rather than stored, so no column and no historical row has to
+   * change: `InwardLoadLine.quantityKg` still reports what actually arrived.
+   * `SegregationRun.totalKg` is the amount THIS run sorted.
+   */
+  const prior = await prisma.segregationRun.aggregate({
+    where: { sourceLoadId: load.id, sourceSkuId: source.id },
+    _sum: { totalKg: true },
+  });
+  const alreadySortedKg = prior._sum.totalKg ?? 0;
+  const availableKg = receivedKg - alreadySortedKg;
+
+  const allocTotal = d.allocations.reduce((a, b) => a + b.kg, 0);
+  const sortedKg = allocTotal + d.wastageKg;
+  if (sortedKg <= 0) return fail("NOTHING_SORTED", "Allocate at least some weight before completing", 422);
+  if (sortedKg > availableKg) {
+    return fail(
+      "MISMATCH",
+      `Allocations + wastage (${sortedKg} kg) exceed the unsorted balance (${availableKg} kg)`,
+      422
+    );
+  }
+  const remainingKg = availableKg - sortedKg;
+
+  // Wastage is a share of what this run actually processed, not of the whole lot.
+  const wastagePct = Number(((d.wastageKg / sortedKg) * 100).toFixed(2));
 
   await prisma.$transaction(async (tx) => {
-    // Decrement mixed bucket by full lot total.
+    // Decrement mixed bucket by what this run sorted. Any balance stays in the
+    // bucket as unsorted stock.
     await tx.inventory.upsert({
       where: { skuId: source.id },
       create: { yardId, skuId: source.id, quantityKg: 0 },
-      update: { quantityKg: { decrement: unitKg } },
+      update: { quantityKg: { decrement: sortedKg } },
     });
     await tx.inventoryTransaction.create({
       data: {
         yardId,
         skuId: source.id,
-        changeKg: -unitKg,
+        changeKg: -sortedKg,
         type: "SEGREGATION_OUT",
         refId: load.id,
         refType: "InwardLoad",
@@ -101,14 +127,15 @@ export async function POST(req: Request) {
       },
     });
 
-    // Consume this load's mixed batch (traceability source).
+    // Consume this load's mixed batch (traceability source), by the sorted
+    // amount only — the rest of the batch is still on the floor.
     const sourceLot = await tx.inventoryLot.findFirst({
       where: { sourceLoadId: load.id, skuId: source.id },
     });
     if (sourceLot) {
       await tx.inventoryLot.update({
         where: { id: sourceLot.id },
-        data: { remainingKg: Math.max(0, sourceLot.remainingKg - unitKg) },
+        data: { remainingKg: Math.max(0, sourceLot.remainingKg - sortedKg) },
       });
     }
 
@@ -150,7 +177,7 @@ export async function POST(req: Request) {
         lotNumber: load.lotNumber,
         sourceLoadId: load.id,
         sourceSkuId: source.id,
-        totalKg: unitKg,
+        totalKg: sortedKg,
         wastageKg: d.wastageKg,
         wastagePct,
         status: "COMPLETED",
@@ -175,15 +202,21 @@ export async function POST(req: Request) {
       });
     }
 
-    // The load is only finished when none of its materials are still waiting.
+    // A line is finished only when its whole quantity has been sorted. With a
+    // balance left it stays RECEIVED, which is what keeps it in the Sort queue
+    // and its remaining kilograms counted as unsorted stock.
+    //
+    // The load is finished only when none of its materials are still waiting.
     // Flipping it on the first line would drop the rest out of the Sort queue
     // while their stock is still sitting in the mixed bucket.
-    if (line) {
-      await tx.inwardLoadLine.update({ where: { id: line.id }, data: { status: "SEGREGATED" } });
-    }
-    const stillPending = line ? pendingLines.filter((l) => l.id !== line.id).length : 0;
-    if (stillPending === 0) {
-      await tx.inwardLoad.update({ where: { id: load.id }, data: { status: "SEGREGATED" } });
+    if (remainingKg === 0) {
+      if (line) {
+        await tx.inwardLoadLine.update({ where: { id: line.id }, data: { status: "SEGREGATED" } });
+      }
+      const stillPending = line ? pendingLines.filter((l) => l.id !== line.id).length : 0;
+      if (stillPending === 0) {
+        await tx.inwardLoad.update({ where: { id: load.id }, data: { status: "SEGREGATED" } });
+      }
     }
   });
 
@@ -193,5 +226,5 @@ export async function POST(req: Request) {
     { channel: "sales", action: "ready-changed", entity: "Sku", actorId: guard.user.id },
   ]);
 
-  return ok({ lotNumber: load.lotNumber, wastagePct });
+  return ok({ lotNumber: load.lotNumber, wastagePct, sortedKg, remainingKg });
 }

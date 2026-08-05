@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireYard, parseBody, ok, fail } from "@/lib/api";
+import { requireYard, parseBody, ok, fail, MAX_IMAGE_BODY_BYTES } from "@/lib/api";
 import { storeImage, StorageNotConfiguredError } from "@/lib/storage";
 import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/lib/image-validate";
 import { tooManyRequests } from "@/lib/rate-limit";
@@ -14,7 +14,10 @@ const schema = z.object({
    * the real work: arithmetic size check, then file-signature detection.
    */
   dataUrl: z.string().startsWith("data:image/").max(MAX_DATA_URL_CHARS),
-  kind: z.enum(["vehicle-front", "vehicle-back", "material", "scale", "weighbridge-slip"]),
+  // `sale-document` is the Sell page's optional supporting paperwork. Additive:
+  // the enum is a filename-prefix whitelist, so a new member changes nothing
+  // about how the existing kinds are validated or stored.
+  kind: z.enum(["vehicle-front", "vehicle-back", "material", "scale", "weighbridge-slip", "sale-document"]),
   lotNumber: z.string().max(40).optional(),
   index: z.number().int().min(0).max(50).optional(),
 });
@@ -28,7 +31,7 @@ export async function POST(req: Request) {
   const limit = await rateLimitShared("upload", guard.user.id);
   if (!limit.ok) return tooManyRequests(limit, "upload");
 
-  const body = await parseBody(req, schema);
+  const body = await parseBody(req, schema, { maxBytes: MAX_IMAGE_BODY_BYTES });
   if ("res" in body) return body.res;
 
   // The client's MIME type is never trusted. Format and extension both come

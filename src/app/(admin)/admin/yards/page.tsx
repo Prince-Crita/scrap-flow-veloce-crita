@@ -216,7 +216,7 @@ export default function AdminYardsPage() {
                   <td className="num">
                     {num(y.stats.users)}
                     <div className="aTiny aMuted">
-                      {y.stats.owners}O · {y.stats.managers}M
+                      {y.stats.owners}O · {y.stats.managers}S
                     </div>
                   </td>
                   <td className="num">{num(y.stats.vendors)}</td>
@@ -417,7 +417,7 @@ export default function AdminYardsPage() {
         <Modal title={`Deactivate ${confirmOff.yardName}?`} onClose={() => setConfirmOff(null)}>
           {err && <div className="aErr">{err}</div>}
           <p style={{ fontSize: 13, lineHeight: 1.6, color: "var(--muted)" }}>
-            Its owner and manager will no longer be able to sign in, and the yard disappears from
+            Its owner and supervisor will no longer be able to sign in, and the yard disappears from
             operations. <b style={{ color: "var(--text)" }}>No data is deleted</b> — all{" "}
             {num(confirmOff.stats.loadsTotal)} loads, {num(confirmOff.stats.sales)} invoices and{" "}
             {kg(confirmOff.stats.stockKg)} of stock stay intact and auditable, and you can reactivate

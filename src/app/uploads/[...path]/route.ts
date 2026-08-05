@@ -1,6 +1,8 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
+import { getUser } from "@/lib/api";
+import { LOCAL_UPLOAD_DIR } from "@/lib/storage";
 
 /**
  * Serves locally-stored upload bytes at the SAME URL shape they are saved under
@@ -25,13 +27,29 @@ import { NextResponse } from "next/server";
  * route is simply never reached there — it backs the local/self-hosted path that
  * `storeImage` falls back to when BLOB_READ_WRITE_TOKEN is absent.
  *
- * Access is unchanged: middleware already requires a session for /uploads, and
- * this route deliberately adds no new policy of its own.
+ * ── Access ───────────────────────────────────────────────────────────────────
+ * Middleware requires a session for /uploads. That alone was not enough: every
+ * stored path begins with the owning yard's id, so any signed-in operator who
+ * learned (or guessed from an API response) another yard's URL could read that
+ * yard's photographs — weighbridge slips, vehicles, number plates. The rest of
+ * the app is scoped by `yardId` from the session and never from input; this
+ * route now says the same thing. A platform ADMIN still reads any yard, because
+ * the console renders those images by design.
  */
 
 export const dynamic = "force-dynamic";
 
-const ROOT = path.join(process.cwd(), "public", "uploads");
+/**
+ * Private store for locally-written uploads. Not under `public/`, so it is never
+ * answered by Next's static handler and always passes through the yard check
+ * above.
+ */
+const ROOT = path.join(process.cwd(), LOCAL_UPLOAD_DIR);
+/**
+ * Where uploads landed before they were moved out of `public/`. Read-only
+ * fallback so historical rows keep resolving; nothing new is written here.
+ */
+const LEGACY_ROOT = path.join(process.cwd(), "public", "uploads");
 
 const TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -55,6 +73,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path: string[]
   }
   const target = path.resolve(ROOT, ...parts);
   if (target !== ROOT && !target.startsWith(ROOT + path.sep)) return notFound();
+  const legacyTarget = path.resolve(LEGACY_ROOT, ...parts);
+  if (legacyTarget !== LEGACY_ROOT && !legacyTarget.startsWith(LEGACY_ROOT + path.sep)) return notFound();
+
+  /**
+   * Yard isolation. The first segment is the owning yard's id.
+   *
+   * 404 rather than 403 throughout: a "forbidden" answer confirms that the file
+   * exists, which is itself a leak, and the rest of this route already answers
+   * 404 for everything it will not serve.
+   */
+  const user = await getUser();
+  if (!user) return notFound();
+  if (user.role !== "ADMIN" && parts[0] !== user.yardId) return notFound();
 
   const ext = path.extname(target).toLowerCase();
   const type = TYPES[ext];
@@ -95,14 +126,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path: string[]
     }
   }
 
-  let bytes: Buffer;
-  try {
-    const stat = await fs.stat(target);
-    if (!stat.isFile()) return notFound();
-    bytes = await fs.readFile(target);
-  } catch {
-    return notFound();
+  // Private store first, then the historical `public/uploads` location.
+  let bytes: Buffer | null = null;
+  for (const candidate of [target, legacyTarget]) {
+    try {
+      const stat = await fs.stat(candidate);
+      if (!stat.isFile()) continue;
+      bytes = await fs.readFile(candidate);
+      break;
+    } catch {
+      /* try the next location */
+    }
   }
+  if (!bytes) return notFound();
 
   return new NextResponse(new Uint8Array(bytes), {
     headers: {

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getJson, sendJson, ApiError } from "@/lib/fetcher";
 import { PageHead, Card, Pill, Modal, Field, EmptyState, SkeletonRows, Kpi, num, when } from "@/components/admin/ui";
+import { roleLabel } from "@/lib/role-label";
 
 type UserRow = {
   id: string;
@@ -165,7 +166,7 @@ function UsersPage() {
 
       <div className="aGrid">
         <Kpi label="Owners" value={num(counts.owners)} foot="can sell in their yard" />
-        <Kpi label="Managers" value={num(counts.managers)} foot="stock · inward · sort" />
+        <Kpi label="Supervisors" value={num(counts.managers)} foot="stock · inward · sort" />
         <Kpi label="Platform Admins" value={num(counts.admins)} foot="cross-yard access" />
         <Kpi
           label="Needs attention"
@@ -194,7 +195,7 @@ function UsersPage() {
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Filter by role">
           <option value="">All roles</option>
           <option value="OWNER">Owner</option>
-          <option value="MANAGER">Manager</option>
+          <option value="MANAGER">Supervisor</option>
           <option value="ADMIN">Admin</option>
         </select>
         {hasFilters && (
@@ -239,7 +240,7 @@ function UsersPage() {
                     <div className="aTiny aMuted">{u.email}</div>
                   </td>
                   <td>
-                    <Pill tone="role">{u.role}</Pill>
+                    <Pill tone="role">{roleLabel(u.role)}</Pill>
                   </td>
                   <td className="aTiny">
                     {u.yard ? (
@@ -440,11 +441,20 @@ function CreateUserModal({
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"OWNER" | "MANAGER">("MANAGER");
   const [yardId, setYardId] = useState(defaultYardId);
+  /**
+   * Was hard-coded to `true`, so EVERY user an admin created was parked on
+   * /change-password at first sign-in with no way to opt out. For a password
+   * reset that is right; for handing over a freshly created yard it meant the
+   * Owner and the Manager both had a manual step before the yard could be used
+   * at all. The API has always accepted this flag — only the console never
+   * offered it. Default stays `true`, so nothing changes unless it is unticked.
+   */
+  const [mustChange, setMustChange] = useState(true);
 
   return (
     <Modal
       title="Create User"
-      subtitle="Owners get the full Stock → Inward → Sort → Sell flow. Managers get everything except Sell."
+      subtitle="Owners get the full Stock → Inward → Sort → Sell flow. Supervisors get everything except Sell."
       onClose={onClose}
     >
       {err && <div className="aErr">{err}</div>}
@@ -452,7 +462,7 @@ function CreateUserModal({
         className="aForm"
         onSubmit={(e) => {
           e.preventDefault();
-          onSubmit({ name, email, password, role, yardId, mustChangePassword: true });
+          onSubmit({ name, email, password, role, yardId, mustChangePassword: mustChange });
         }}
       >
         <Field label="Full name" error={fieldErrs.name}>
@@ -463,7 +473,7 @@ function CreateUserModal({
         </Field>
         <Field label="Role" error={fieldErrs.role}>
           <select value={role} onChange={(e) => setRole(e.target.value as "OWNER" | "MANAGER")}>
-            <option value="MANAGER">Manager</option>
+            <option value="MANAGER">Supervisor</option>
             <option value="OWNER">Owner</option>
           </select>
         </Field>
@@ -479,10 +489,20 @@ function CreateUserModal({
         <Field
           label="Temporary password"
           wide
-          hint="At least 8 characters. The user must change it at first sign-in."
+          hint={
+            mustChange
+              ? "At least 8 characters. The user must change it at first sign-in."
+              : "At least 8 characters. The user signs straight in with this password."
+          }
           error={fieldErrs.password}
         >
           <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
+        </Field>
+        <Field label="First sign-in" wide hint="Leave ticked unless you are handing over a ready-to-use account.">
+          <label className="aCheck">
+            <input type="checkbox" checked={mustChange} onChange={(e) => setMustChange(e.target.checked)} />
+            <span>Require a password change at first sign-in</span>
+          </label>
         </Field>
         <div className="aFormActions">
           <button type="button" className="aBtn ghost" onClick={onClose}>
@@ -548,7 +568,7 @@ function EditUserModal({
         </Field>
         <Field label="Role" error={fieldErrs.role}>
           <select value={role} onChange={(e) => setRole(e.target.value as "OWNER" | "MANAGER")}>
-            <option value="MANAGER">Manager</option>
+            <option value="MANAGER">Supervisor</option>
             <option value="OWNER">Owner</option>
           </select>
         </Field>

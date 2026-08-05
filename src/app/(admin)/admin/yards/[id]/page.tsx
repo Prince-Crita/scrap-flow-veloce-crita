@@ -24,6 +24,7 @@ import {
   pct,
 } from "@/components/admin/ui";
 import { EnterYardButton } from "@/components/admin/enter-yard-button";
+import { roleLabel } from "@/lib/role-label";
 import { RecordEditModal, type EditField, type EditableRecordKind } from "@/components/admin/record-edit";
 
 type Detail = {
@@ -722,7 +723,7 @@ export default function AdminYardDetailPage() {
                       <EmptyState
                         icon="🚛"
                         title="No dispatches yet"
-                        hint="A sale allocates stock; a dispatch is the vehicle that carries it out. Rows appear here the moment a manager loads one."
+                        hint="A sale allocates stock; a dispatch is the vehicle that carries it out. Rows appear here the moment a supervisor loads one."
                       />
                     </td>
                   </tr>
@@ -985,7 +986,7 @@ export default function AdminYardDetailPage() {
                         <div className="aTiny aMuted">{u.email}</div>
                       </td>
                       <td>
-                        <Pill tone="role">{u.role}</Pill>
+                        <Pill tone="role">{roleLabel(u.role)}</Pill>
                       </td>
                       <td>
                         {u.active ? <Pill tone="ok">Active</Pill> : <Pill tone="off">Disabled</Pill>}

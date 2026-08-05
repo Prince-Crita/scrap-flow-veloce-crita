@@ -98,6 +98,33 @@ export function RealtimeProvider({
     if (!enabled) return;
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
 
+    /**
+     * Coalesce a burst of events into ONE invalidation pass.
+     *
+     * One mutation publishes several events — a completed sort publishes `sort`,
+     * `stock` and `sales` — and their key lists overlap, so invalidating per
+     * event refetched `/api/sell/ready` three times and `/api/stock` three times
+     * for a single action. They arrive within milliseconds of each other, so
+     * collecting them over one short tick and invalidating the union once is the
+     * same freshness for a third of the requests.
+     *
+     * This is a debounce on the INVALIDATION, not a poll and not a delay on the
+     * transport: events still arrive pushed, and 50 ms is below the threshold of
+     * noticing. Listeners below are still called immediately, per event.
+     */
+    const pendingKeys = new Set<string>();
+    let flush: ReturnType<typeof setTimeout> | null = null;
+    const scheduleInvalidate = (keys: string[][]) => {
+      for (const k of keys) pendingKeys.add(JSON.stringify(k));
+      if (flush) return;
+      flush = setTimeout(() => {
+        flush = null;
+        const batch = [...pendingKeys];
+        pendingKeys.clear();
+        for (const id of batch) qc.invalidateQueries({ queryKey: JSON.parse(id) as string[] });
+      }, 50);
+    };
+
     let source: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
@@ -136,9 +163,7 @@ export function RealtimeProvider({
          */
         const isOwnEcho = !!currentUserId && event.actorId === currentUserId;
         if (!isOwnEcho) {
-          for (const key of CHANNEL_QUERY_KEYS[event.channel] ?? []) {
-            qc.invalidateQueries({ queryKey: key });
-          }
+          scheduleInvalidate(CHANNEL_QUERY_KEYS[event.channel] ?? []);
         }
 
         for (const l of listeners.current) {
@@ -167,6 +192,7 @@ export function RealtimeProvider({
     return () => {
       disposed = true;
       if (retry) clearTimeout(retry);
+      if (flush) clearTimeout(flush);
       source?.close();
       setConnected(false);
     };
@@ -232,8 +258,21 @@ export function useInvalidateChannels() {
   const qc = useQueryClient();
   return useCallback(
     (...channels: YardChannel[]) => {
+      /**
+       * Deduplicated across the channels passed.
+       *
+       * The channel→key table overlaps on purpose, so `invalidateChannels(
+       * "inward", "stock", "sort")` — what saving a load does — used to
+       * invalidate `sortPending`, `stock` and `sellReady` twice each. For an
+       * ACTIVE query every invalidation is its own refetch, so one save fired
+       * the same GET twice. Same keys, same freshness, half the requests.
+       */
+      const seen = new Set<string>();
       for (const c of channels) {
         for (const key of CHANNEL_QUERY_KEYS[c] ?? []) {
+          const id = JSON.stringify(key);
+          if (seen.has(id)) continue;
+          seen.add(id);
           qc.invalidateQueries({ queryKey: key });
         }
       }

@@ -17,6 +17,9 @@ export async function GET() {
   const { prisma } = guard;
 
   const sales = await prisma.sale.findMany({
+    // Sale → buyer, and Sale → sku → inventory: three relation levels, which
+    // cost three serial round trips under Prisma's default strategy.
+    relationLoadStrategy: "join",
     where: { dispatchedKg: { not: null } },
     orderBy: { createdAt: "asc" },
     include: {

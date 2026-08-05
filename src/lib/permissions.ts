@@ -26,8 +26,9 @@ export const CAPABILITIES = [
   "vendor.write",
   "material.write",
   /// Managing the segregation categories a mixed lot can be sorted into.
-  /// Owner and Admin configure them; a Manager reads them but never edits, since
-  /// changing the sort tree changes what every future run can produce.
+  /// Yard-operational: the Manager runs the segregation, so the Manager also
+  /// maintains the categories it sorts into, with the same CRUD and the same
+  /// validations as the Owner. Admin is unchanged (it inherits every capability).
   "sortType.write",
   // platform (ADMIN only)
   "yard.manage",
@@ -45,6 +46,7 @@ const MANAGER_CAPS: readonly Capability[] = [
   "inward.create",
   "sort.complete",
   "outward.dispatch",
+  "sortType.write",
 ];
 
 const OWNER_CAPS: readonly Capability[] = [
@@ -58,7 +60,6 @@ const OWNER_CAPS: readonly Capability[] = [
   "reports.view",
   "vendor.write",
   "material.write",
-  "sortType.write",
 ];
 
 const ADMIN_ONLY_CAPS: readonly Capability[] = [
@@ -114,8 +115,9 @@ export const ROUTE_RULES: { prefix: string; roles: readonly Role[]; methods?: re
   { prefix: "/api/vendors", roles: ["OWNER", "ADMIN"], methods: ["POST", "PATCH", "PUT", "DELETE"] },
   { prefix: "/api/materials", roles: ["OWNER", "ADMIN"], methods: ["POST", "PATCH", "PUT", "DELETE"] },
   { prefix: "/api/skus", roles: ["OWNER", "ADMIN"], methods: ["POST", "PATCH", "PUT", "DELETE"] },
-  // Sort types: a Manager reads the tree (GET stays open) but never edits it.
-  { prefix: "/api/sort-types", roles: ["OWNER", "ADMIN"], methods: ["POST", "PATCH", "PUT", "DELETE"] },
+  // Sort types: every in-yard role maintains the segregation tree. The Manager
+  // is the one who actually sorts, so the Manager also curates the categories.
+  { prefix: "/api/sort-types", roles: ["OWNER", "MANAGER", "ADMIN"], methods: ["POST", "PATCH", "PUT", "DELETE"] },
 ];
 
 /** Returns the rule blocking this (path, method, role), or null if allowed. */

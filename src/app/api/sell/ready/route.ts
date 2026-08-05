@@ -7,11 +7,27 @@ export async function GET() {
   if ("res" in guard) return guard.res;
   const { prisma } = guard;
 
-  const skus = await prisma.sku.findMany({
-    where: { isMixedBucket: false },
-    orderBy: { sortOrder: "asc" },
-    include: { inventory: true },
-  });
+  /**
+   * One batch, not two sequential awaits.
+   *
+   * The receivables read depends on nothing in the SKU read, so running them in
+   * series cost the Sell page an extra full round trip to Neon on every load for
+   * no reason. Same two queries, same results, half the latency.
+   */
+  const [skus, receivables] = await Promise.all([
+    prisma.sku.findMany({
+      relationLoadStrategy: "join",
+      where: { isMixedBucket: false },
+      orderBy: { sortOrder: "asc" },
+      include: { inventory: true },
+    }),
+    prisma.receivable.findMany({
+      relationLoadStrategy: "join",
+      where: { status: { in: ["PENDING", "PARTIAL"] } },
+      orderBy: { createdAt: "desc" },
+      include: { buyer: { select: { name: true } }, sale: { select: { invoiceNumber: true } } },
+    }),
+  ]);
 
   const ready = skus
     .filter((s) => (s.inventory?.quantityKg ?? 0) >= s.saleThresholdKg)
@@ -22,12 +38,6 @@ export async function GET() {
       quantityKg: s.inventory?.quantityKg ?? 0,
       thresholdKg: s.saleThresholdKg,
     }));
-
-  const receivables = await prisma.receivable.findMany({
-    where: { status: { in: ["PENDING", "PARTIAL"] } },
-    orderBy: { createdAt: "desc" },
-    include: { buyer: { select: { name: true } }, sale: { select: { invoiceNumber: true } } },
-  });
 
   return ok({
     ready,

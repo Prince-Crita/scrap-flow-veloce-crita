@@ -45,7 +45,7 @@ const ADMIN = {
   email: process.env.ADMIN_EMAIL || "admin@scrapflow.in",
   password: process.env.ADMIN_PASSWORD || "ScrapFlow@2026",
 };
-const OWNER = { email: "owner@veloce.in", password: "owner123" };
+const OWNER = { email: "test-owner@veloce.test", password: "testowner123" };
 
 let pass = 0,
   fail = 0;

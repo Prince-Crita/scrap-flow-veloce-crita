@@ -26,26 +26,31 @@ export async function GET(req: Request) {
 
   const includeHidden = new URL(req.url).searchParams.get("all") === "1";
 
-  const materials = await prisma.material.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, code: true, active: true },
-  });
-
-  const skus = await prisma.sku.findMany({
-    where: { isMixedBucket: false, materialId: { not: null } },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-      code: true,
-      icon: true,
-      materialId: true,
-      visible: true,
-      saleThresholdKg: true,
-      sortOrder: true,
-      inventory: { select: { quantityKg: true } },
-    },
-  });
+  // Independent reads — batched so opening the sort-type sheet costs one round
+  // trip instead of two, and the SKU read resolves its inventory in the same
+  // statement rather than a third.
+  const [materials, skus] = await Promise.all([
+    prisma.material.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, code: true, active: true },
+    }),
+    prisma.sku.findMany({
+      relationLoadStrategy: "join",
+      where: { isMixedBucket: false, materialId: { not: null } },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        icon: true,
+        materialId: true,
+        visible: true,
+        saleThresholdKg: true,
+        sortOrder: true,
+        inventory: { select: { quantityKg: true } },
+      },
+    }),
+  ]);
 
   return ok({
     materials: materials.map((m) => ({

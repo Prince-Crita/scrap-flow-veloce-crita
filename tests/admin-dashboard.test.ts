@@ -5,12 +5,23 @@
  * payloads, that the pages render their sections, that both are ADMIN-only, and
  * that the analytics window/scope filters actually filter.
  *
- * READ-ONLY against the database: this suite performs GETs and never writes, so
- * it is safe to run against Yard 1 directly and needs no sandbox.
+ * READ-ONLY against the database: this suite performs GETs and never writes.
+ *
+ * ── Reference yard ───────────────────────────────────────────────────────────
+ * It used to read Yard 1 (SFDY001) directly and assert that platform totals
+ * equalled WHOLE-database totals. Neither holds any more: platform analytics now
+ * count active yards only (src/lib/active-yards.ts), and the development yards
+ * are archived. So the suite runs against the sandbox — `npm run test:dashboard`
+ * restores the prototype baseline there first, which also reactivates it — and
+ * every database expectation is scoped to the yards that are actually active.
+ *
+ * Because the sandbox is active while this runs, re-run `npm run demo:prepare`
+ * afterwards to hand the platform back in its clean, single-yard state.
  *
  * Usage: start the app, then `npm run test:dashboard`.
  */
 import { PrismaClient } from "@prisma/client";
+import { TEST_YARD_CODE, TEST_OWNER, TEST_MANAGER } from "./fixtures";
 
 const prisma = new PrismaClient();
 const BASE = process.env.BASE_URL || "http://localhost:3001";
@@ -19,8 +30,8 @@ const ADMIN = {
   email: process.env.ADMIN_EMAIL || "admin@scrapflow.in",
   password: process.env.ADMIN_PASSWORD || "ScrapFlow@2026",
 };
-const OWNER = { email: "owner@veloce.in", password: "owner123" };
-const MANAGER = { email: "manager@veloce.in", password: "manager123" };
+const OWNER = { email: TEST_OWNER.email, password: TEST_OWNER.password };
+const MANAGER = { email: TEST_MANAGER.email, password: TEST_MANAGER.password };
 
 let pass = 0,
   fail = 0;
@@ -106,31 +117,39 @@ async function main() {
     Array.isArray(d.recentActivity?.sales) && Array.isArray(d.recentActivity?.loads) && Array.isArray(d.recentActivity?.audit));
 
   console.log("\n[Dashboard] figures agree with the database");
-  const yard1 = await prisma.yard.findUniqueOrThrow({ where: { yardCode: "SFDY001" } });
+  const yard1 = await prisma.yard.findUniqueOrThrow({ where: { yardCode: TEST_YARD_CODE } });
   const dbYards = await prisma.yard.count();
   const dbActive = await prisma.yard.count({ where: { active: true } });
+  /**
+   * Every platform figure below counts ACTIVE yards only, so the expectations
+   * must be scoped the same way — comparing against the whole database would
+   * assert the behaviour this release deliberately removed.
+   */
+  const activeIds = (await prisma.yard.findMany({ where: { active: true }, select: { id: true } })).map((y) => y.id);
+  const live = { yardId: { in: activeIds } };
+  check("the reference yard is active", yard1.active === true, TEST_YARD_CODE);
   check(`yardsTotal matches DB (${dbYards})`, d.kpis.yardsTotal === dbYards, `got ${d.kpis.yardsTotal}`);
   check(`yardsActive matches DB (${dbActive})`, d.kpis.yardsActive === dbActive, `got ${d.kpis.yardsActive}`);
 
-  const dbStock = await prisma.inventory.aggregate({ _sum: { quantityKg: true } });
+  const dbStock = await prisma.inventory.aggregate({ where: live, _sum: { quantityKg: true } });
   check(`stockKg matches DB (${dbStock._sum.quantityKg})`, d.kpis.stockKg === (dbStock._sum.quantityKg ?? 0), `got ${d.kpis.stockKg}`);
   check("finishedKg + unsortedKg === stockKg", d.kpis.finishedKg + d.kpis.unsortedKg === d.kpis.stockKg,
     `${d.kpis.finishedKg} + ${d.kpis.unsortedKg} != ${d.kpis.stockKg}`);
 
-  const dbSales = await prisma.sale.aggregate({ _count: { _all: true }, _sum: { total: true } });
+  const dbSales = await prisma.sale.aggregate({ where: live, _count: { _all: true }, _sum: { total: true } });
   check(`salesLifetimeCount matches DB (${dbSales._count._all})`, d.kpis.salesLifetimeCount === dbSales._count._all, `got ${d.kpis.salesLifetimeCount}`);
   check(`salesLifetimeValue matches DB (${dbSales._sum.total})`, d.kpis.salesLifetimeValue === (dbSales._sum.total ?? 0), `got ${d.kpis.salesLifetimeValue}`);
 
-  const dbOwners = await prisma.user.count({ where: { role: "OWNER", active: true } });
+  const dbOwners = await prisma.user.count({ where: { role: "OWNER", active: true, ...live } });
   check(`owners matches DB (${dbOwners})`, d.kpis.owners === dbOwners, `got ${d.kpis.owners}`);
 
-  const dbPending = await prisma.inwardLoad.count({ where: { status: "RECEIVED" } });
+  const dbPending = await prisma.inwardLoad.count({ where: { status: "RECEIVED", ...live } });
   check(`pendingLoads matches DB (${dbPending})`, d.kpis.pendingLoads === dbPending, `got ${d.kpis.pendingLoads}`);
 
-  const y1 = d.yardSummary.find((y: { yardCode: string }) => y.yardCode === "SFDY001");
-  check("Yard 1 appears in yardSummary", !!y1);
-  check("Yard 1 is reported active", y1?.active === true);
-  check("Yard 1 has 1 owner and 1 manager", y1?.owners === 1 && y1?.managers === 1, `${y1?.owners}/${y1?.managers}`);
+  const y1 = d.yardSummary.find((y: { yardCode: string }) => y.yardCode === TEST_YARD_CODE);
+  check("the reference yard appears in yardSummary", !!y1);
+  check("the reference yard is reported active", y1?.active === true);
+  check("the reference yard has 1 owner and 1 supervisor", y1?.owners === 1 && y1?.managers === 1, `${y1?.owners}/${y1?.managers}`);
   // Expectations are DERIVED from the database, not hardcoded to the
   // prototype: the property under test is that the dashboard reports what the
   // database actually contains. Pinning the prototype total here made the
@@ -142,15 +161,15 @@ async function main() {
   const y1PendingExpected = await prisma.inwardLoad.count({
     where: { yardId: yard1!.id, status: "RECEIVED" },
   });
-  check("Yard 1 stock matches the database", y1?.stockKg === y1StockExpected, `${y1?.stockKg} vs ${y1StockExpected}`);
-  check("Yard 1 pending loads match the database", y1?.pendingLoads === y1PendingExpected, `${y1?.pendingLoads} vs ${y1PendingExpected}`);
+  check("the reference yard's stock matches the database", y1?.stockKg === y1StockExpected, `${y1?.stockKg} vs ${y1StockExpected}`);
+  check("the reference yard's pending loads match the database", y1?.pendingLoads === y1PendingExpected, `${y1?.pendingLoads} vs ${y1PendingExpected}`);
 
   // Platform-wide figures are asserted against the database rather than
   // hard-coded, so this suite stays correct however many yards exist (the test
   // sandbox yard may or may not be present when it runs).
   console.log("\n[Dashboard] platform aggregates agree with the database");
   const dbOutstanding = await prisma.receivable.aggregate({
-    where: { status: { in: ["PENDING", "PARTIAL"] } },
+    where: { status: { in: ["PENDING", "PARTIAL"] }, ...live },
     _sum: { amount: true },
   });
   check(
@@ -160,14 +179,14 @@ async function main() {
   );
 
   const dbMixedKg = await prisma.inventory.findMany({
-    where: { sku: { isMixedBucket: true } },
+    where: { sku: { isMixedBucket: true }, ...live },
     select: { quantityKg: true },
   });
   const expectedUnsorted = dbMixedKg.reduce((a, r) => a + r.quantityKg, 0);
   check(`unsortedKg matches DB (${expectedUnsorted})`, d.kpis.unsortedKg === expectedUnsorted, `got ${d.kpis.unsortedKg}`);
 
   const dbReady = await prisma.inventory.findMany({
-    where: { quantityKg: { gt: 0 }, sku: { isMixedBucket: false } },
+    where: { quantityKg: { gt: 0 }, sku: { isMixedBucket: false }, ...live },
     select: { quantityKg: true, sku: { select: { saleThresholdKg: true } } },
   });
   const expectedReady = dbReady.filter((r) => r.quantityKg >= r.sku.saleThresholdKg).length;
@@ -190,7 +209,7 @@ async function main() {
       _sum: { quantityKg: true },
     })
   )._sum.quantityKg ?? 0;
-  check("Yard 1 unsorted stock matches the mixed buckets", y1Unsorted === y1UnsortedExpected, `${y1Unsorted} vs ${y1UnsortedExpected}`);
+  check("the reference yard's unsorted stock matches the mixed buckets", y1Unsorted === y1UnsortedExpected, `${y1Unsorted} vs ${y1UnsortedExpected}`);
   /**
    * Derived from the database, not hardcoded to the prototype.
    *
@@ -213,29 +232,29 @@ async function main() {
     .sort();
   const actualReadyNames = y1Ready.map((r) => r.sku.name).sort();
   check(
-    "Yard 1's ready-to-sell set matches its inventory",
+    "the reference yard's ready-to-sell set matches its inventory",
     JSON.stringify(actualReadyNames) === JSON.stringify(expectedReadyNames),
     `${actualReadyNames.join(", ")} vs ${expectedReadyNames.join(", ")}`
   );
-  check("Yard 1 has at least one SKU at or above its sale threshold", y1Ready.length >= 1, `got ${y1Ready.length}`);
+  check("the reference yard has at least one SKU at or above its sale threshold", y1Ready.length >= 1, `got ${y1Ready.length}`);
   // Derived, not hardcoded. This used to assert ₹1,25,500 — the figure Yard 1
   // happened to hold — and broke the moment the owner raised a real invoice. The
   // invariant worth testing is that the dashboard's arithmetic agrees with the
   // database, whatever the numbers are.
-  const platformRecvDb = await prisma.receivable.aggregate({ _sum: { amount: true } });
+  const platformRecvDb = await prisma.receivable.aggregate({ where: live, _sum: { amount: true } });
   const platformRecvApi = (d.sellSummary.receivables as { amount: number }[]).reduce((a, r) => a + r.amount, 0);
   check(
     "the dashboard's receivables total equals the database's",
     Math.abs(platformRecvApi - (platformRecvDb._sum.amount ?? 0)) < 0.01,
     `api ${platformRecvApi} vs db ${platformRecvDb._sum.amount}`
   );
-  check("Yard 1 has receivables to report", (y1Recv._sum.amount ?? 0) > 0, `got ${y1Recv._sum.amount}`);
+  check("the reference yard has receivables to report", (y1Recv._sum.amount ?? 0) > 0, `got ${y1Recv._sum.amount}`);
   check(
-    "Yard 1 stock rows sum to the reported total",
+    "the reference yard's stock rows sum to the reported total",
     y1Stock.reduce((a, r) => a + r.quantityKg, 0) === y1StockExpected
   );
 
-  // The dashboard's readyToSell list must include Yard 1's MS Commercial.
+  // The dashboard's readyToSell list must include the reference yard's MS Commercial.
   const ready = d.stockSummary.readyToSell as { name: string }[];
   check("dashboard readyToSell includes MS Commercial", ready.some((r) => r.name === "MS Commercial"), JSON.stringify(ready));
 
@@ -263,13 +282,13 @@ async function main() {
     check(`analytics.${key} present`, a[key] !== undefined);
   }
   check("every trend point has numeric fields", a.trends.sales.every((p: Record<string, unknown>) => isNum(p.count) && isNum(p.value) && isNum(p.kg)));
-  check("yardComparison covers every yard", a.yardComparison.length === dbYards, `${a.yardComparison.length} vs ${dbYards}`);
+  check("yardComparison covers every ACTIVE yard", a.yardComparison.length === dbActive, `${a.yardComparison.length} vs ${dbActive}`);
   check("stockBreakdown sums to platform stock",
     a.stockBreakdown.reduce((s: number, x: { value: number }) => s + x.value, 0) === d.kpis.stockKg,
     `${a.stockBreakdown.reduce((s: number, x: { value: number }) => s + x.value, 0)} vs ${d.kpis.stockKg}`);
   check("stockBreakdown is sorted descending",
     a.stockBreakdown.every((x: { value: number }, i: number, arr: { value: number }[]) => i === 0 || arr[i - 1].value >= x.value));
-  const dbAllRecv = await prisma.receivable.aggregate({ _sum: { amount: true } });
+  const dbAllRecv = await prisma.receivable.aggregate({ where: live, _sum: { amount: true } });
   check(
     `receivableBreakdown totals match DB (${dbAllRecv._sum.amount})`,
     a.receivableBreakdown.reduce((s: number, x: { value: number }) => s + x.value, 0) === (dbAllRecv._sum.amount ?? 0)
@@ -281,7 +300,7 @@ async function main() {
   check("scoped window echoes the yardId", scoped.window.yardId === yard1.id);
   check("scoped comparison contains exactly that yard", scoped.yardComparison.length === 1 && scoped.yardComparison[0].yardId === yard1.id);
   check(
-    "scoped stock equals Yard 1's stock",
+    "scoped stock equals the reference yard's stock",
     scoped.totals.stockKg === y1StockExpected,
     `${scoped.totals.stockKg} vs ${y1StockExpected}`
   );
@@ -290,7 +309,7 @@ async function main() {
   // the assertion that actually proves yard scoping works: the scoped figure must
   // equal THIS yard's sum and not the platform's.
   check(
-    "scoped receivables equal Yard 1's own database sum",
+    "scoped receivables equal the reference yard's own database sum",
     Math.abs(scopedRecv - (y1Recv._sum.amount ?? 0)) < 0.01,
     `scoped ${scopedRecv} vs db ${y1Recv._sum.amount}`
   );

@@ -32,8 +32,8 @@ const ADMIN = {
   email: process.env.ADMIN_EMAIL || "admin@scrapflow.in",
   password: process.env.ADMIN_PASSWORD || "ScrapFlow@2026",
 };
-const OWNER = { email: "owner@veloce.in", password: "owner123" };
-const MANAGER = { email: "manager@veloce.in", password: "manager123" };
+const OWNER = { email: "test-owner@veloce.test", password: "testowner123" };
+const MANAGER = { email: "test-manager@veloce.test", password: "testmanager123" };
 
 const VIEWPORTS = [
   { name: "mobile", width: 390, height: 844 },

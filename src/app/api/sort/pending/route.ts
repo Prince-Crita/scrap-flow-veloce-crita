@@ -16,17 +16,40 @@ export async function GET() {
   if ("res" in guard) return guard.res;
   const { prisma } = guard;
 
-  const loads = await prisma.inwardLoad.findMany({
-    where: { status: "RECEIVED" },
-    orderBy: { createdAt: "asc" },
-    include: {
-      vendor: { select: { name: true } },
-      lines: { orderBy: { sequence: "asc" } },
-    },
-  });
+  // The SKU tree does not depend on the loads, so the two run together rather
+  // than costing the Sort screen two serial round trips on every open.
+  const [loads, skus] = await Promise.all([
+    prisma.inwardLoad.findMany({
+      relationLoadStrategy: "join",
+      where: { status: "RECEIVED" },
+      orderBy: { createdAt: "asc" },
+      include: {
+        vendor: { select: { name: true } },
+        lines: { orderBy: { sequence: "asc" } },
+      },
+    }),
+    // Child (non-mixed) SKUs grouped by material, plus the mixed source bucket.
+    prisma.sku.findMany({ select: { id: true, name: true, materialId: true, isMixedBucket: true } }),
+  ]);
 
-  // Child (non-mixed) SKUs grouped by material, plus the mixed source bucket.
-  const skus = await prisma.sku.findMany({ select: { id: true, name: true, materialId: true, isMixedBucket: true } });
+  /**
+   * How much of each load/material has already been segregated.
+   *
+   * A run may now sort only part of a lot, leaving an unsorted balance that must
+   * come back up here — so the queue shows what is LEFT, not what arrived. The
+   * balance is derived from the runs booked against the load's mixed bucket
+   * rather than stored, which is what lets `quantityKg` keep reporting the
+   * quantity actually received.
+   */
+  const runs =
+    loads.length === 0
+      ? []
+      : await prisma.segregationRun.groupBy({
+          by: ["sourceLoadId", "sourceSkuId"],
+          where: { sourceLoadId: { in: loads.map((l) => l.id) } },
+          _sum: { totalKg: true },
+        });
+  const sortedByLoadSku = new Map(runs.map((r) => [`${r.sourceLoadId}::${r.sourceSkuId}`, r._sum.totalKg ?? 0]));
 
   // Every RECEIVED load appears in the Sort selector. Loads whose material has
   // no segregation sub-SKUs yet are shown as not-yet-sortable rather than hidden
@@ -38,17 +61,23 @@ export async function GET() {
             .filter((ln) => ln.status === "RECEIVED")
             .map((ln) => ({
               lineId: ln.id as string | null,
+              skuId: ln.skuId as string | null,
               materialId: ln.materialId,
               materialLabel: ln.materialLabel,
               kg: ln.quantityKg,
             }))
         : l.materialId
-          ? [{ lineId: null, materialId: l.materialId, materialLabel: l.materialLabel, kg: l.totalKg }]
+          ? [{ lineId: null, skuId: null, materialId: l.materialId, materialLabel: l.materialLabel, kg: l.totalKg }]
           : [];
 
     return pending.map((p) => {
       const targets = skus.filter((s) => s.materialId === p.materialId && !s.isMixedBucket);
       const source = skus.find((s) => s.materialId === p.materialId && s.isMixedBucket);
+      // The line's own SKU is the mixed bucket the stock landed in; legacy loads
+      // with no line fall back to the material's bucket.
+      const sourceSkuId = p.skuId ?? source?.id ?? null;
+      const sortedKg = sourceSkuId ? (sortedByLoadSku.get(`${l.id}::${sourceSkuId}`) ?? 0) : 0;
+      const remainingKg = Math.max(0, p.kg - sortedKg);
       return {
         // Stable per-row identity. A multi-material load contributes several
         // rows sharing one loadId, so selection must key on this, not loadId.
@@ -57,7 +86,11 @@ export async function GET() {
         lineId: p.lineId,
         lotNumber: l.lotNumber,
         materialLabel: p.materialLabel,
-        totalKg: p.kg,
+        /** The unsorted balance — what this run may allocate. */
+        totalKg: remainingKg,
+        /** What actually arrived, and how much of it earlier runs already sorted. */
+        receivedKg: p.kg,
+        sortedKg,
         vendorName: l.vendor?.name ?? "Walk-in",
         vehicleNumber: l.vehicleNumber ?? "—",
         createdAt: l.createdAt,

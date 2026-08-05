@@ -70,12 +70,6 @@ function LoginForm() {
             {loading ? "SIGNING IN…" : "SIGN IN"}
           </button>
         </form>
-
-        <div className="demo">
-          Demo · owner@veloce.in / owner123
-          <br />
-          Demo · manager@veloce.in / manager123
-        </div>
       </div>
     </div>
   );

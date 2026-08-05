@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fireConfetti, stopConfetti } from "@/lib/confetti";
 
 /* ---------------- Level system (cumulative XP thresholds) ---------------- */
@@ -171,21 +171,33 @@ export function UIProvider({
     [xp, party]
   );
 
-  const value: UICtx = {
-    xp,
-    level,
-    streak,
-    toast,
-    party,
-    bump,
-    confirm,
-    _toastMsg: toastMsg,
-    _toastShow: toastShow,
-    _party: partyData,
-    _closeParty: closeParty,
-    _confirm: confirmState,
-    _resolveConfirm: resolveConfirm,
-  };
+  /**
+   * Memoised, because EVERY screen consumes this context.
+   *
+   * A fresh object each render made the context value a new reference on every
+   * toast tick, every XP bump and every confetti frame, so React re-rendered the
+   * whole page tree — the Inward keypad, the Sort rows, the stock cards —
+   * whenever a toast merely showed or hid. Same values, same behaviour; the
+   * identity now only changes when one of them actually does.
+   */
+  const value = useMemo<UICtx>(
+    () => ({
+      xp,
+      level,
+      streak,
+      toast,
+      party,
+      bump,
+      confirm,
+      _toastMsg: toastMsg,
+      _toastShow: toastShow,
+      _party: partyData,
+      _closeParty: closeParty,
+      _confirm: confirmState,
+      _resolveConfirm: resolveConfirm,
+    }),
+    [xp, level, streak, toast, party, bump, confirm, toastMsg, toastShow, partyData, closeParty, confirmState, resolveConfirm]
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

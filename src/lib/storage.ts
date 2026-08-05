@@ -17,6 +17,13 @@ export interface StoredFile {
 }
 
 /**
+ * Where the local/self-hosted fallback keeps its bytes, relative to the project
+ * root. Deliberately not under `public/` — see `storeImage` below. Shared with
+ * the serving route so the two can never disagree about the location.
+ */
+export const LOCAL_UPLOAD_DIR = ".uploads";
+
+/**
  * Thrown when there is nowhere durable to put the bytes.
  *
  * A distinct type rather than a generic Error so the API boundary can answer
@@ -115,10 +122,22 @@ export async function storeImage(
     );
   }
 
-  // Local / self-hosted fallback: write under /public and serve via the
-  // /uploads/[...path] route.
-  const publicDir = path.join(process.cwd(), "public", "uploads", keyParts.yardId, date, folder);
-  await fs.mkdir(publicDir, { recursive: true });
-  await fs.writeFile(path.join(publicDir, name), bytes);
+  /**
+   * Local / self-hosted fallback — written OUTSIDE /public.
+   *
+   * These used to land in `public/uploads`, where Next's static file handler
+   * answers before any route does. That meant a yard's weighbridge slips and
+   * number plates were served with no check beyond "has a session", so any
+   * signed-in operator holding another yard's URL could read its photographs.
+   * `.uploads/` is not statically served, so every read goes through
+   * `src/app/uploads/[...path]/route.ts` and its yard check.
+   *
+   * The URL shape is unchanged (`/uploads/<yardId>/…`), so nothing in the
+   * database moves and files already under `public/uploads` keep resolving —
+   * that route still falls back to the old location for them.
+   */
+  const dir = path.join(process.cwd(), LOCAL_UPLOAD_DIR, keyParts.yardId, date, folder);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, name), bytes);
   return { url: `/${relPath}` };
 }

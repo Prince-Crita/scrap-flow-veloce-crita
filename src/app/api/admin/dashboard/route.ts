@@ -1,5 +1,6 @@
 import { requireAdmin, ok } from "@/lib/api";
 import { ocrStatus } from "@/lib/ocr-supervisor";
+import { inLiveYards, andLiveYards, liveYardUsers } from "@/lib/active-yards";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,18 @@ export async function GET() {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const staleBefore = new Date(now.getTime() - STALE_DAYS * 86_400_000);
 
+  /**
+   * Every figure below is scoped to yards that are still operating.
+   *
+   * A decommissioned yard stops contributing to stock, sales, receivables, vendor
+   * and material totals while keeping all of its rows in the database. The yard
+   * table further down deliberately still lists inactive yards — it is a register,
+   * not a metric.
+   */
+  const activeYards = inLiveYards;
+  const activeSql = andLiveYards();
+  const activeYardUsers = liveYardUsers;
+
   const [
     // ---- yards + users ----
     yards,
@@ -130,47 +143,47 @@ export async function GET() {
         deactivatedAt: true,
       },
     }),
-    prisma.user.groupBy({ by: ["role", "active"], _count: { _all: true } }),
-    prisma.user.count({ where: { mustChangePassword: true, active: true } }),
+    prisma.user.groupBy({ by: ["role", "active"], where: activeYardUsers, _count: { _all: true } }),
+    prisma.user.count({ where: { mustChangePassword: true, active: true, ...activeYardUsers } }),
 
-    prisma.inventory.groupBy({ by: ["yardId"], _sum: { quantityKg: true } }),
+    prisma.inventory.groupBy({ by: ["yardId"], where: activeYards, _sum: { quantityKg: true } }),
     // Per-SKU stock across the platform, so the dashboard can show which
     // materials dominate without a per-yard fan-out.
     prisma.inventory.findMany({
       relationLoadStrategy: "join",
-      where: { quantityKg: { gt: 0 } },
+      where: { quantityKg: { gt: 0 }, ...activeYards },
       select: {
         quantityKg: true,
         yardId: true,
         sku: { select: { name: true, code: true, icon: true, isMixedBucket: true, saleThresholdKg: true } },
       },
     }),
-    prisma.sku.count({ where: { isMixedBucket: true } }),
-    prisma.inventoryLot.aggregate({ _sum: { remainingKg: true }, _count: { _all: true } }),
+    prisma.sku.count({ where: { isMixedBucket: true, ...activeYards } }),
+    prisma.inventoryLot.aggregate({ where: activeYards, _sum: { remainingKg: true }, _count: { _all: true } }),
 
-    prisma.vendor.groupBy({ by: ["active"], _count: { _all: true } }),
+    prisma.vendor.groupBy({ by: ["active"], where: activeYards, _count: { _all: true } }),
     prisma.inwardLoad.groupBy({
       by: ["vendorId"],
-      where: { createdAt: { gte: start30 }, vendorId: { not: null } },
+      where: { createdAt: { gte: start30 }, vendorId: { not: null }, ...activeYards },
       _sum: { totalKg: true },
       _count: { _all: true },
       orderBy: { _sum: { totalKg: "desc" } },
       take: 6,
     }),
-    prisma.material.groupBy({ by: ["active"], _count: { _all: true } }),
+    prisma.material.groupBy({ by: ["active"], where: activeYards, _count: { _all: true } }),
     prisma.inwardLoad.groupBy({
       by: ["materialLabel"],
-      where: { createdAt: { gte: start30 } },
+      where: { createdAt: { gte: start30 }, ...activeYards },
       _sum: { totalKg: true },
       _count: { _all: true },
       orderBy: { _sum: { totalKg: "desc" } },
       take: 8,
     }),
 
-    prisma.inwardLoad.groupBy({ by: ["yardId"], where: { status: "RECEIVED" }, _count: { _all: true }, _sum: { totalKg: true } }),
+    prisma.inwardLoad.groupBy({ by: ["yardId"], where: { status: "RECEIVED", ...activeYards }, _count: { _all: true }, _sum: { totalKg: true } }),
     prisma.inwardLoad.findFirst({
       relationLoadStrategy: "join",
-      where: { status: "RECEIVED" },
+      where: { status: "RECEIVED", ...activeYards },
       orderBy: { createdAt: "asc" },
       select: { id: true, lotNumber: true, createdAt: true, totalKg: true, yard: { select: { id: true, yardCode: true, yardName: true } } },
     }),
@@ -185,8 +198,8 @@ export async function GET() {
         0::bigint AS month_count, 0::bigint AS month_kg,
         COUNT(*) AS all_count, COALESCE(SUM("totalKg"), 0) AS all_kg,
         NULL::float8 AS today_value, NULL::float8 AS d7_value, NULL::float8 AS all_value
-      FROM "InwardLoad"`,
-    prisma.segregationRun.aggregate({ where: { createdAt: { gte: start7 } }, _count: { _all: true }, _sum: { totalKg: true, wastageKg: true } }),
+      FROM "InwardLoad" WHERE true ${activeSql}`,
+    prisma.segregationRun.aggregate({ where: { createdAt: { gte: start7 }, ...activeYards }, _count: { _all: true }, _sum: { totalKg: true, wastageKg: true } }),
 
     // Lifetime + today + last 7 days in ONE pass over Sale.
     prisma.$queryRaw<WindowRollup[]>`
@@ -200,17 +213,17 @@ export async function GET() {
         COALESCE(SUM("total") FILTER (WHERE "createdAt" >= ${startOfToday}), 0) AS today_value,
         COALESCE(SUM("total") FILTER (WHERE "createdAt" >= ${start7}), 0)       AS d7_value,
         COALESCE(SUM("total"), 0) AS all_value
-      FROM "Sale"`,
+      FROM "Sale" WHERE true ${activeSql}`,
     prisma.sale.groupBy({
       by: ["yardId"],
-      where: { createdAt: { gte: start30 } },
+      where: { createdAt: { gte: start30 }, ...activeYards },
       _count: { _all: true },
       _sum: { total: true, quantityKg: true },
     }),
-    prisma.receivable.groupBy({ by: ["status"], _count: { _all: true }, _sum: { amount: true } }),
+    prisma.receivable.groupBy({ by: ["status"], where: activeYards, _count: { _all: true }, _sum: { amount: true } }),
     prisma.sale.groupBy({
       by: ["buyerId"],
-      where: { createdAt: { gte: start30 } },
+      where: { createdAt: { gte: start30 }, ...activeYards },
       _sum: { total: true },
       _count: { _all: true },
       orderBy: { _sum: { total: "desc" } },
@@ -219,6 +232,7 @@ export async function GET() {
 
     prisma.sale.findMany({
       relationLoadStrategy: "join",
+      where: activeYards,
       orderBy: { createdAt: "desc" },
       take: RECENT_LIMIT,
       select: {
@@ -234,6 +248,7 @@ export async function GET() {
     }),
     prisma.inwardLoad.findMany({
       relationLoadStrategy: "join",
+      where: activeYards,
       orderBy: { createdAt: "desc" },
       take: RECENT_LIMIT,
       select: {
@@ -271,13 +286,13 @@ export async function GET() {
       },
     }),
     // Latest sale per yard — drives the "quiet yard" alert.
-    prisma.sale.groupBy({ by: ["yardId"], _max: { createdAt: true } }),
+    prisma.sale.groupBy({ by: ["yardId"], where: activeYards, _max: { createdAt: true } }),
     // Owners/managers per yard — drives the "no owner" alert. Depends on nothing
     // else in this route, so it belongs in the batch: run serially it added a
     // whole extra round trip (~85 ms) to every dashboard load for no reason.
     prisma.user.groupBy({
       by: ["yardId", "role"],
-      where: { active: true, yardId: { not: null } },
+      where: { active: true, ...inLiveYards },
       _count: { _all: true },
     }),
     // ---- outward / dispatch ----
@@ -285,10 +300,11 @@ export async function GET() {
     // fan-out, so adding dispatch KPIs costs a fixed number of round trips.
     prisma.sale.groupBy({
       by: ["dispatchStatus"],
+      where: activeYards,
       _count: { _all: true },
       _sum: { quantityKg: true, dispatchedKg: true },
     }),
-    prisma.outwardLoad.groupBy({ by: ["yardId"], _count: { _all: true }, _sum: { totalKg: true } }),
+    prisma.outwardLoad.groupBy({ by: ["yardId"], where: activeYards, _count: { _all: true }, _sum: { totalKg: true } }),
     // Today + week + calendar month + lifetime in ONE pass over OutwardLoad,
     // replacing four separate aggregates over the same rows.
     prisma.$queryRaw<WindowRollup[]>`
@@ -301,9 +317,10 @@ export async function GET() {
         COALESCE(SUM("totalKg") FILTER (WHERE "createdAt" >= ${startOfMonth}), 0) AS month_kg,
         COUNT(*) AS all_count, COALESCE(SUM("totalKg"), 0) AS all_kg,
         NULL::float8 AS today_value, NULL::float8 AS d7_value, NULL::float8 AS all_value
-      FROM "OutwardLoad"`,
+      FROM "OutwardLoad" WHERE true ${activeSql}`,
     prisma.outwardLoad.findMany({
       relationLoadStrategy: "join",
+      where: activeYards,
       orderBy: { createdAt: "desc" },
       take: RECENT_LIMIT,
       select: {
@@ -403,12 +420,19 @@ export async function GET() {
 
   const inactiveYards = yards.filter((y) => !y.active);
   if (inactiveYards.length) {
+    /**
+     * Deactivating a yard is a decision, not a fault, so this is informational.
+     * It used to be tone `bad`, which read as an incident every time a yard was
+     * deliberately archived.
+     */
     alerts.push({
       id: "yards-inactive",
-      tone: "bad",
-      icon: "🚫",
-      title: `${inactiveYards.length} yard${inactiveYards.length === 1 ? "" : "s"} deactivated`,
-      detail: inactiveYards.map((y) => y.yardCode).join(", ") + " — users cannot sign in. Data is intact.",
+      tone: "muted",
+      icon: "🗄️",
+      title: `${inactiveYards.length} yard${inactiveYards.length === 1 ? "" : "s"} archived`,
+      detail:
+        inactiveYards.map((y) => y.yardCode).join(", ") +
+        " — users cannot sign in and they are excluded from every platform total. Data is intact.",
       href: "/admin/yards",
     });
   }
@@ -465,13 +489,15 @@ export async function GET() {
     });
   }
 
-  if (alerts.length === 0) {
+  // "Nothing needs attention" is about warnings and faults; an archived-yard
+  // note is a statement of fact and must not suppress the all-clear.
+  if (!alerts.some((a) => a.tone === "warn" || a.tone === "bad")) {
     alerts.push({
       id: "all-clear",
       tone: "good",
       icon: "✅",
       title: "No alerts",
-      detail: "Every active yard has an owner, nothing is deactivated, and no admin is inside a yard.",
+      detail: "Every active yard has an owner, and no admin is inside a yard.",
     });
   }
 

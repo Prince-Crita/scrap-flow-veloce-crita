@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getJson } from "@/lib/fetcher";
 import { fmt } from "@/lib/format";
+import { PhonePortal } from "@/components/phone-portal";
 
 type RecentLoad = {
   id: string;
@@ -19,12 +20,15 @@ type RecentLoad = {
 };
 
 /**
- * Read-only panel under the weighbridge-slip button. It exists so the operator
- * can confirm what was just saved without leaving Inward — it never mutates,
- * and it reuses the page's existing type and spacing vocabulary rather than
- * introducing a new card style.
+ * Read-only list of what was just saved, so the operator can confirm a load
+ * without leaving Inward. It never mutates, and it reuses the page's existing
+ * type and spacing vocabulary rather than introducing a new card style.
+ *
+ * `asModal` only changes where the SAME cards are drawn: Inward now reaches them
+ * through one line instead of giving them permanent room on the page. The query,
+ * its ordering and its realtime invalidation are untouched.
  */
-export function RecentLoads() {
+export function RecentLoads({ asModal, onClose }: { asModal?: boolean; onClose?: () => void } = {}) {
   const [open, setOpen] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -36,11 +40,13 @@ export function RecentLoads() {
   // invalidates ["recentLoads"] on the `inward` channel.
   const loads = data?.loads ?? [];
 
-  return (
+  const body = (
     <>
-      <div className="secTitle" style={{ marginTop: 22 }}>
-        Recent Load Details
-      </div>
+      {!asModal && (
+        <div className="secTitle" style={{ marginTop: 22 }}>
+          Recent Load Details
+        </div>
+      )}
 
       {isLoading && <div className="skel" style={{ height: 56 }} />}
 
@@ -123,5 +129,22 @@ export function RecentLoads() {
         );
       })}
     </>
+  );
+
+  if (!asModal) return body;
+
+  return (
+    <PhonePortal>
+      <div className="sheetWrap" onClick={onClose}>
+        <div className="sheet" onClick={(e) => e.stopPropagation()}>
+          <div className="sheetTitle">Recent Load Details</div>
+          <div className="sheetStep">The last loads saved in this yard</div>
+          {body}
+          <button className="cta ghost" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </PhonePortal>
   );
 }

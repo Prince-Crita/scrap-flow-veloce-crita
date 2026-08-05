@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { requireAdmin, parseBody, ok, fail } from "@/lib/api";
 import { audit } from "@/lib/audit";
+import { provisionYard } from "@/lib/yard-provisioning";
 
 export const dynamic = "force-dynamic";
 
@@ -86,37 +87,6 @@ const createSchema = z.object({
   seedMaterials: z.boolean().optional().default(true),
 });
 
-/** The starter material tree for a brand-new yard. Mirrors prisma/seed.ts. */
-const STARTER_MATERIALS = [
-  {
-    code: "MS",
-    name: "MS Scrap",
-    skus: [
-      { code: "MSB", name: "MS Bazar", icon: "🔩", threshold: 2000, mixed: false, order: 1 },
-      { code: "MSC", name: "MS Commercial", icon: "🏗️", threshold: 2000, mixed: false, order: 2 },
-      { code: "MSS", name: "MS Super", icon: "⭐", threshold: 2000, mixed: false, order: 3 },
-      { code: "MIXMS", name: "Mixed MS", icon: "🧺", threshold: 99999, mixed: true, order: 7 },
-    ],
-  },
-  {
-    code: "PET",
-    name: "PET Plastic",
-    skus: [
-      { code: "PETW", name: "PET White", icon: "🥛", threshold: 1500, mixed: false, order: 4 },
-      { code: "PETG", name: "PET Green", icon: "🧪", threshold: 1500, mixed: false, order: 5 },
-      { code: "MIXPET", name: "PET Mixed", icon: "🧴", threshold: 99999, mixed: true, order: 8 },
-    ],
-  },
-  {
-    code: "ALU",
-    name: "Aluminum",
-    skus: [
-      { code: "ALUC", name: "Alu Castings", icon: "⚙️", threshold: 800, mixed: false, order: 6 },
-      { code: "MIXALU", name: "Aluminum Mixed", icon: "🪨", threshold: 99999, mixed: true, order: 9 },
-    ],
-  },
-];
-
 /**
  * POST — create a yard.
  *
@@ -153,31 +123,7 @@ export async function POST(req: Request) {
       },
     });
 
-    if (d.seedMaterials) {
-      for (const m of STARTER_MATERIALS) {
-        const material = await tx.material.create({
-          data: { yardId: created.id, name: m.name, code: m.code },
-        });
-        for (const s of m.skus) {
-          const sku = await tx.sku.create({
-            data: {
-              yardId: created.id,
-              materialId: material.id,
-              name: s.name,
-              code: s.code,
-              icon: s.icon,
-              saleThresholdKg: s.threshold,
-              isMixedBucket: s.mixed,
-              sortOrder: s.order,
-            },
-          });
-          await tx.inventory.create({ data: { yardId: created.id, skuId: sku.id, quantityKg: 0 } });
-        }
-      }
-      // Continue the familiar numbering convention in each new yard.
-      await tx.counter.create({ data: { name: `${created.id}:lot`, value: 0 } });
-      await tx.counter.create({ data: { name: `${created.id}:invoice`, value: 0 } });
-    }
+    if (d.seedMaterials) await provisionYard(tx, created.id);
 
     return created;
   });

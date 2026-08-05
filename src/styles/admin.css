@@ -1880,3 +1880,18 @@ body[data-shell="admin"] .aCardViz + .aCardViz { margin-top: 18px; }
    belongs to the chart above it, the rows are separate figures. Without this they
    ran together and the legend read as the first row of the list. */
 body[data-shell="admin"] .cLegend + .aStatList { margin-top: 14px; }
+
+/* Inline checkbox inside an admin form field. */
+body[data-shell="admin"] .aCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+body[data-shell="admin"] .aCheck input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2e8b4f;
+  cursor: pointer;
+}

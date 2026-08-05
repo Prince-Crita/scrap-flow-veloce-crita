@@ -14,7 +14,8 @@
  * exists in Node but NOT in the browser context, so the callback throws
  * `ReferenceError: __name is not defined`. Inline loops only.
  *
- * Read-only against Yard 1: it signs in as the demo Owner and never writes.
+ * Read-only against the sandbox yard: it signs in as the sandbox Owner and
+ * never writes. It used to use Yard 1, which is now archived.
  *
  * Usage: start the app, then `npx tsx tests/gamification.test.ts`.
  */
@@ -62,7 +63,7 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const page = await ctx.newPage();
 
-    await login(page, "owner@veloce.in", "owner123");
+    await login(page, "test-owner@veloce.test", "testowner123");
     await page.waitForSelector(".avatar", { timeout: 20_000 });
 
     // ── The ring actually reflects XP ────────────────────────────────────────
@@ -114,14 +115,14 @@ async function main() {
 
     check("shows the user name", /Veloce Owner|Owner/i.test(sheet), sheet.slice(0, 120));
     check("shows the role", /Owner|Manager|Admin/i.test(sheet));
-    check("shows the yard name", /Yard 1/.test(sheet));
-    check("shows the yard code", /SFDY001/.test(sheet));
+    check("shows the yard name", /Test Yard \(automated\)/.test(sheet));
+    check("shows the yard code", /SFTEST01/.test(sheet));
     check("shows the current level", /LEVEL/i.test(sheet));
     check("shows the current XP", /XP/.test(sheet));
     check("shows XP needed for the next level", /to level \d+|Level \d+ unlocked/i.test(sheet), sheet.slice(-300));
     check("shows the streak", /STREAK/i.test(sheet));
     check("shows an achievements placeholder", /Achievements/i.test(sheet));
-    // Yard.ownerName is unset for Yard 1, so this must fall back to the real
+    // Yard.ownerName is unset for the sandbox yard, so this must fall back to the real
     // OWNER user rather than rendering an em dash.
     check("shows a resolved owner name, not a blank", !/Owner\s*—/.test(sheet), sheet.slice(-400));
     check("shows a Sign Out button", /Sign Out/i.test(sheet));
@@ -204,7 +205,7 @@ async function main() {
     // past /login and silently test the wrong user.
     const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const page2 = await ctx2.newPage();
-    await login(page2, "manager@veloce.in", "manager123");
+    await login(page2, "test-manager@veloce.test", "testmanager123");
     await page2.waitForSelector(".avatar", { timeout: 20_000 });
     const mgr = await page2.evaluate(() => {
       const el = document.querySelector(".avatar .ringFill");
@@ -228,7 +229,7 @@ async function main() {
       return el ? (el.textContent || "") : "";
     });
     check("manager profile names the manager, not the owner", /Manager/i.test(mgrSheet), mgrSheet.slice(0, 120));
-    check("manager profile shows the same yard", /Yard 1/.test(mgrSheet));
+    check("manager profile shows the same yard", /Test Yard \(automated\)/.test(mgrSheet));
     check("manager profile still offers Sign Out", /Sign Out/i.test(mgrSheet));
   } finally {
     if (browser) await browser.close();

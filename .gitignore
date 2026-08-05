@@ -9,20 +9,45 @@
 /build
 next-env.d.ts
 
-# env
+# env — never commit real values. `.env.example` documents the keys instead.
 .env
-.env*.local
+.env.*
+!.env.example
+ocr-service/.env
+!ocr-service/.env.example
 
-# prisma
+# prisma / local databases
 /prisma/*.db
+*.sqlite
+*.sqlite3
+*.db-journal
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
+*.key
+*.p12
 /coverage
-npm-debug.log*
 .vercel
 *.tsbuildinfo
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/logs/
+
+# caches and temporary files
+.cache/
+.turbo/
+.eslintcache
+*.tmp
+*.temp
+/tmp/
+/temp/
 
 # python / ocr service
 ocr-service/__pycache__/
@@ -34,3 +59,32 @@ ocr-service/*.pt
 
 # playwright responsive screenshots
 /screenshots/
+
+# Locally-stored uploads (self-hosted fallback). Yard photographs — never committed,
+# and deliberately outside /public so they are only served through the gated route.
+/.uploads/
+
+# Uploads written by the pre-Blob local fallback. Historical rows already in git
+# stay there; nothing new is added, and a yard's photographs are not repo content.
+/public/uploads/
+
+# ---- Capacitor / Android ------------------------------------------------
+# The Android project itself IS committed (it is generated once and then edited),
+# but none of its build output is.
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/captures/
+/android/local.properties
+/android/.idea/
+/android/app/src/main/assets/public/
+/android/app/src/main/res/xml/config.xml
+/android/app/release/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Android Studio / IntelliJ
+*.iml
+.idea/

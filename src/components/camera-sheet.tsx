@@ -39,10 +39,25 @@ export function CameraSheet({
   open,
   onClose,
   onComplete,
+  photosOnly,
+  title,
 }: {
   open: boolean;
   onClose: () => void;
   onComplete: (data: CaptureData) => void;
+  /**
+   * Front + back photos only — step 1, and nothing after it.
+   *
+   * The Sell page needs the vehicle's two photos and already collects the plate
+   * and the driver in its own form, so walking it through the plate-reading and
+   * material-image steps would ask for the same things twice. This is the SAME
+   * component, the same tiles and the same upload path; the OCR flow is simply
+   * not entered. `onComplete` still returns a CaptureData, with the fields this
+   * mode does not collect left empty.
+   */
+  photosOnly?: boolean;
+  /** Overrides the step-1 heading; the default is the full capture flow's. */
+  title?: string;
 }) {
   const upload = useUploader();
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -175,8 +190,10 @@ export function CameraSheet({
 
         {step === 1 && (
           <>
-            <div className="sheetTitle">Vehicle Capture</div>
-            <div className="sheetStep">Step 1 of 3 · front &amp; back images (both required)</div>
+            <div className="sheetTitle">{title ?? "Vehicle Capture"}</div>
+            <div className="sheetStep">
+              {photosOnly ? "Front & back of the vehicle" : "Step 1 of 3 · front & back images (both required)"}
+            </div>
             <div className="captureGrid">
               <div className={`capTile${front ? " filled" : ""}`} onClick={() => frontRef.current?.click()}>
                 {front ? (
@@ -206,9 +223,31 @@ export function CameraSheet({
               </div>
             </div>
             <p className="hint">Tap a tile to open the camera or pick from gallery. Both images are mandatory.</p>
-            <button className="cta" disabled={!front || !back || busy} onClick={goToPlateStep}>
-              {busy ? "UPLOADING…" : "NEXT · READ NUMBER PLATE"}
-            </button>
+            {photosOnly ? (
+              <button
+                className="cta"
+                disabled={!front || !back || busy}
+                onClick={() => {
+                  onComplete({
+                    frontUrl: front!.url,
+                    backUrl: back!.url,
+                    // Not collected in this mode; the caller's own form owns them.
+                    plate: "",
+                    confidence: 0,
+                    driverName: "",
+                    vehicleType: "",
+                    materialUrls: [],
+                  });
+                  reset();
+                }}
+              >
+                {busy ? "UPLOADING…" : "✓ ATTACH PHOTOS"}
+              </button>
+            ) : (
+              <button className="cta" disabled={!front || !back || busy} onClick={goToPlateStep}>
+                {busy ? "UPLOADING…" : "NEXT · READ NUMBER PLATE"}
+              </button>
+            )}
             <button className="cta ghost" onClick={onClose}>
               Cancel
             </button>

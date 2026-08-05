@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireYard, parseBody, ok } from "@/lib/api";
+import { requireYard, parseBody, ok, MAX_IMAGE_BODY_BYTES } from "@/lib/api";
 import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/lib/image-validate";
 import { tooManyRequests } from "@/lib/rate-limit";
 import { rateLimitShared } from "@/lib/rate-limit-shared";
@@ -7,6 +7,23 @@ import { awaitOcrReady, ocrStatus, resolveOcrServiceUrl } from "@/lib/ocr-superv
 import { snapToKnownPlate, SNAP_HISTORY_LIMIT, SNAP_CONFIDENCE_CEILING } from "@/lib/plate-match";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Per-request ANPR diagnostics, OFF unless `OCR_DEBUG=1`.
+ *
+ * These lines exist to tell "pointing at the wrong host" from "host is up but
+ * rejecting us" — the one thing that was impossible to confirm from outside
+ * while the production ANPR path was being diagnosed. They log the endpoint
+ * ORIGIN only, never the secret, the image bytes or the plate.
+ *
+ * They fire on every capture, though, which is log noise a production yard does
+ * not need, so they are gated rather than deleted: set `OCR_DEBUG=1` in the
+ * environment to bring them back without a deploy. Real failures still go to
+ * `console.error` unconditionally.
+ */
+const trace = (line: string) => {
+  if (process.env.OCR_DEBUG === "1") console.log(`[ocr] ${line}`);
+};
 
 const schema = z.object({
   image: z.string().startsWith("data:image/").max(MAX_DATA_URL_CHARS),
@@ -30,7 +47,7 @@ export async function POST(req: Request) {
   const limit = await rateLimitShared("ocr", guard.user.id);
   if (!limit.ok) return tooManyRequests(limit, "OCR");
 
-  const body = await parseBody(req, schema);
+  const body = await parseBody(req, schema, { maxBytes: MAX_IMAGE_BODY_BYTES });
   if ("res" in body) return body.res;
 
   // Verify both images are genuinely images before shipping megabytes to the
@@ -57,23 +74,14 @@ export async function POST(req: Request) {
   const url = resolveOcrServiceUrl();
   const secret = process.env.OCR_SERVICE_SECRET ?? "";
 
-  /**
-   * Diagnostic line for the production ANPR path.
-   *
-   * Deliberately logs the ORIGIN only (`new URL(...).origin`) and never the
-   * secret, the image bytes or the plate — an origin is what you need to tell
-   * "pointing at the wrong host" from "host is up but rejecting us", and it is
-   * the one field that was impossible to confirm from outside. `hasSecret` is a
-   * boolean, never the value.
-   */
   const startedAt = Date.now();
   const origin = url ? safeOrigin(url) : null;
-  console.log(
-    `[ocr] request received · endpoint=${origin ?? "unresolved"} · hasSecret=${secret.length > 0} · back=${!!body.data.imageBack}`
+  trace(
+    `request received · endpoint=${origin ?? "unresolved"} · hasSecret=${secret.length > 0} · back=${!!body.data.imageBack}`
   );
 
   if (!url) {
-    console.log(`[ocr] skipped · reason=not-configured · ${Date.now() - startedAt}ms`);
+    trace(`skipped · reason=not-configured · ${Date.now() - startedAt}ms`);
     return ok({ plate: null, confidence: 0, crop: null, fallback: true, reason: "OCR service not configured" });
   }
 
@@ -88,8 +96,8 @@ export async function POST(req: Request) {
   const ready = await awaitOcrReady();
   if (!ready) {
     const s = ocrStatus();
-    console.log(
-      `[ocr] not ready · state=${s.state} · detector=${s.components ? JSON.stringify(s.components) : "unknown"} · ${Date.now() - startedAt}ms`
+    trace(
+      `not ready · state=${s.state} · detector=${s.components ? JSON.stringify(s.components) : "unknown"} · ${Date.now() - startedAt}ms`
     );
     return ok({
       plate: null,
@@ -110,7 +118,7 @@ export async function POST(req: Request) {
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    console.log(`[ocr] service responded · status=${res.status} · ${Date.now() - startedAt}ms`);
+    trace(`service responded · status=${res.status} · ${Date.now() - startedAt}ms`);
 
     if (!res.ok) {
       return ok({ plate: null, confidence: 0, crop: null, fallback: true, reason: `OCR service ${res.status}` });

@@ -865,6 +865,16 @@ header {
   text-align: right;
   margin: 4px 2px 10px;
 }
+/* A partial run is allowed: says where the leftover goes, so "not zero" does
+   not read as an error the operator still has to clear. */
+.remain .remainNote {
+  display: block;
+  font-style: normal;
+  color: var(--orange);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  margin-top: 3px;
+}
 
 /* ---------- SELL ---------- */
 .alert {
@@ -1434,14 +1444,26 @@ nav.tabbar .on .ico {
   color: var(--orange);
 }
 
-/* ---------- MODAL SHEET (camera / sell / vendor) ---------- */
+/* ---------- MODAL DIALOG (camera / sell / vendor / pickers) ----------
+   These used to slide up as bottom drawers. Every standard dialog in the app —
+   create, edit, select, view-details, forms — is now a CENTERED modal, which is
+   what the drawer was standing in for anyway: a phone drawer that is 92% tall is
+   just a modal that starts off-centre, and on a wide screen it read as a mobile
+   artefact. One rule pair changes all of them, because every sheet in the app is
+   built from .sheetWrap + .sheet.
+
+   The padding is what keeps a dialog clear of the notch and of the bottom tab
+   bar; the wrapper is the scroll/centre container and .sheet caps its own height
+   so long forms scroll INSIDE the dialog rather than growing past the screen. */
 .sheetWrap {
   position: absolute;
   inset: 0;
   z-index: 55;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
+  padding: calc(16px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
   background: rgba(4, 12, 8, 0.72);
   backdrop-filter: blur(3px);
   animation: fade 0.2s ease;
@@ -1456,33 +1478,36 @@ nav.tabbar .on .ico {
 }
 .sheet {
   width: 100%;
-  max-height: 92%;
+  /* Desktop stays a dialog rather than a full-width panel. */
+  max-width: 460px;
+  max-height: 100%;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: none;
   background: var(--ink);
   border: 1px solid var(--line);
-  border-bottom: none;
-  border-radius: 24px 24px 0 0;
-  padding: 18px 18px calc(20px + env(safe-area-inset-bottom));
-  animation: sheetUp 0.28s cubic-bezier(0.2, 1, 0.3, 1);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  animation: dialogIn 0.22s cubic-bezier(0.2, 1, 0.3, 1);
 }
 .sheet::-webkit-scrollbar {
   display: none;
 }
-@keyframes sheetUp {
+@keyframes dialogIn {
   from {
-    transform: translateY(100%);
+    transform: scale(0.94);
+    opacity: 0;
   }
   to {
-    transform: translateY(0);
+    transform: scale(1);
+    opacity: 1;
   }
 }
+/* The drag handle was the drawer's affordance. A centered dialog is not
+   draggable, so it is hidden rather than deleted from a dozen components. */
 .sheetHandle {
-  width: 40px;
-  height: 4px;
-  border-radius: 99px;
-  background: var(--line);
-  margin: 0 auto 14px;
+  display: none;
 }
 .sheetTitle {
   font-size: 13px;
@@ -1739,4 +1764,383 @@ nav.tabbar .on .ico {
   display: inline-block;
   margin-top: 12px;
   margin-bottom: 24px;
+}
+
+/* =====================================================================
+   INWARD ENTRY CARDS  (client-approved layout)
+   The entry section is now two cards: vendor + capture, then one row of
+   three primary actions — material, weight, weighbridge slip. The material
+   chip row, the always-on keypad and the separate upload button that used to
+   sit here are gone; each of those lives inside the control it belongs to.
+   Tokens only — no new colours, fonts or spacing scale.
+   ===================================================================== */
+.entryCard {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+  margin-top: 12px;
+}
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.cardHeadTitle {
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--mint);
+}
+
+/* ---- tap-to-open selector (vendor) ---- */
+.pickField label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.pickCtl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 12px 12px 14px;
+  cursor: pointer;
+}
+.pickCtl.filled {
+  border-color: rgba(46, 139, 79, 0.55);
+}
+.pickCtlVal {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickCtl:not(.filled) .pickCtlVal {
+  color: var(--muted);
+}
+.pickClear {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pickClear:active {
+  background: rgba(255, 107, 92, 0.18);
+  color: var(--red);
+}
+.pickCaret {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* ---- the three primary actions: Material → Weight → Slip ----
+   One row at every width. The order is the order an inward load is processed
+   in, so it is never re-flowed: equal thirds, identical height, identical
+   padding, so no one cell reads as the important one by accident. */
+.actRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: stretch;
+  gap: 8px;
+}
+.actCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  min-height: 84px;
+  padding: 11px 8px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+  font-family: var(--disp);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.12s;
+}
+.actCell:active,
+.actCell:hover {
+  border-color: var(--brand);
+}
+.actCell:focus-visible {
+  outline: none;
+  border-color: var(--orange);
+}
+.actCell:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.actLbl {
+  /* Two lines' worth of room in every cell, whether the label needs it or not —
+     "Weighbridge Slip" wraps and the other two do not, and without a reserved
+     height that one value box would sit lower than its neighbours'. */
+  display: flex;
+  align-items: center;
+  min-height: 2.3em;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+}
+/**
+ * The value box, shared by all three cells.
+ *
+ * Material and Slip used to be bare text under a label while Weight sat in an
+ * outlined field, which made the row read as one input flanked by two captions.
+ * They now share one container — same border, radius, padding, recessed surface —
+ * so the strip reads as a single component. Nothing here is a highlight: it is
+ * the same panel treatment used by every input in the app.
+ */
+.actInset {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  padding: 6px;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+.actVal {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* The weight is TYPED, not chosen: same box, a larger numeral and a small unit
+   suffix. No arrow, no helper text, no colour, no animation. */
+.actCell.wt {
+  cursor: text;
+}
+.wtNum {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wtNum.empty {
+  color: #45705a;
+}
+.wtKg {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  align-self: flex-end;
+  padding-bottom: 2px;
+}
+
+/* Narrow phones: the row still does not wrap — the type shrinks instead, which
+   is the whole point of keeping the three cells proportional. */
+@media (max-width: 380px) {
+  .actRow {
+    gap: 6px;
+  }
+  .actCell {
+    min-height: 78px;
+    padding: 10px 5px;
+    gap: 6px;
+  }
+  .actLbl {
+    font-size: 8.5px;
+    letter-spacing: 0.1em;
+  }
+  .actVal {
+    font-size: 10.5px;
+  }
+  .actInset {
+    padding: 5px 4px;
+  }
+  .wtNum {
+    font-size: 17px;
+  }
+}
+
+/* ---- picker sheet list (vendor / material) ---- */
+.pickList {
+  margin-bottom: 12px;
+}
+.pickRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+.pickRow span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickRow.on {
+  background: rgba(245, 158, 43, 0.14);
+  border-color: var(--orange);
+  color: var(--orange);
+  font-weight: 600;
+}
+.pickTick {
+  color: var(--orange);
+  font-size: 13px;
+}
+.pickX {
+  background: none;
+  border: none;
+  color: var(--red);
+  opacity: 0.75;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.pickX:active {
+  background: rgba(255, 107, 92, 0.18);
+}
+
+/* ---- optional-field hint, plain text input, weight field ---- */
+.lblOpt {
+  text-transform: none;
+  letter-spacing: 0;
+  color: #557a66;
+}
+/* Same input as every sheet's `.field input`, outside a `.field` wrapper. */
+.plainInput {
+  width: 100%;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  outline: none;
+}
+.plainInput::placeholder {
+  color: #557a66;
+}
+.plainInput:focus {
+  border-color: var(--orange);
+}
+
+/* ---- "open this in a dialog" row (Recent Load Details) ---- */
+.linkRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+}
+.linkRow:active {
+  border-color: var(--brand);
+}
+.linkRowTitle {
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+.linkRowGo {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* A short dialog (a choice, a confirmation) should not be as wide as a form. */
+.sheet.compact {
+  max-width: 340px;
+}
+
+/* The three dispatch counters became the filter for the list below them: one
+   status is shown at a time. They keep their existing look; `on` is the only
+   addition, so the selected tab reads as pressed rather than as a new control. */
+.dispTotal {
+  font: inherit;
+  cursor: pointer;
+}
+.dispTotal.on {
+  background: rgba(46, 139, 79, 0.16);
+  border-color: var(--brand);
+}
+.dispTotal.on span {
+  color: var(--text);
+}
+
+/* ---- current load, above SAVE LOAD ----
+   Restores what the permanent keypad used to show: every weighment on the load
+   and the running total, in view at the moment the load is committed. Read-only
+   — the numbers are the cart's own. */
+.loadSummary {
+  margin-top: 14px;
+  padding: 10px 12px 4px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.loadSummaryHead {
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.loadSummaryEmpty {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #557a66;
+  padding: 8px 2px;
+}
+.loadSummary .entries {
+  margin-top: 0;
+}
+/* The total is the summary's own footer rather than a page-level row. */
+.loadSummary .totalRow {
+  margin-top: 0;
+  border-top: 1px solid var(--line);
 }

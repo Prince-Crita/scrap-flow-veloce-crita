@@ -305,7 +305,7 @@ export default function AdminDashboardPage() {
           <EmptyState
             icon="⚠️"
             title="Could not load the dashboard"
-            hint="The platform data request failed. This does not affect any yard — Owner and Manager apps are unaffected."
+            hint="The platform data request failed. This does not affect any yard — Owner and Supervisor apps are unaffected."
             action={
               <button className="aBtn primary" onClick={() => location.reload()}>
                 Retry
@@ -361,7 +361,7 @@ export default function AdminDashboardPage() {
         <Kpi
           label="Yard Users"
           value={num(k.usersTotal)}
-          foot={`${num(k.owners)} owners · ${num(k.managers)} managers${k.usersInactive ? ` · ${num(k.usersInactive)} disabled` : ""}`}
+          foot={`${num(k.owners)} owners · ${num(k.managers)} supervisors${k.usersInactive ? ` · ${num(k.usersInactive)} disabled` : ""}`}
         />
         {/* Dispatch (Phase 4 Outward). Same Kpi primitive as every tile above —
             these join the existing row rather than introducing a new band. */}
@@ -401,7 +401,9 @@ export default function AdminDashboardPage() {
       {/* ══════════ 2. ATTENTION: alerts + pending actions ══════════ */}
       <div className="aSectionTitle">Needs attention</div>
       <div className="aCols">
-        <Card title={`Alerts (${data.alerts.filter((a) => a.tone !== "good").length + (data.ocr && data.ocr.state !== "ready" && data.ocr.state !== "disabled" ? 1 : 0)})`}>
+        {/* The count is of things that need attention — `muted` rows (e.g. the
+            archived-yard note) are informational and are not counted. */}
+        <Card title={`Alerts (${data.alerts.filter((a) => a.tone === "warn" || a.tone === "bad").length + (data.ocr && data.ocr.state !== "ready" && data.ocr.state !== "disabled" ? 1 : 0)})`}>
           <AlertList>
             {/* OCR sidecar health. Shown only when it needs attention: a healthy
                 service is not news, and "disabled" is a deployment choice, not a
@@ -550,7 +552,7 @@ export default function AdminDashboardPage() {
                     <td className="num">
                       {num(y.owners + y.managers)}
                       <div className="aTiny aMuted">
-                        {y.owners}O · {y.managers}M
+                        {y.owners}O · {y.managers}S
                       </div>
                     </td>
                     <td className="num">{num(y.stockKg)}</td>

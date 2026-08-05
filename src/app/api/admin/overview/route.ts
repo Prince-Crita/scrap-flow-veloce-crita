@@ -1,4 +1,5 @@
 import { requireAdmin, ok } from "@/lib/api";
+import { inLiveYards, liveYardUsers } from "@/lib/active-yards";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,10 @@ export async function GET() {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+  // Platform KPIs describe yards that are still operating. Archived yards keep
+  // their rows and stay in the league table below, but stop being counted.
+  const activeYardsOnly = inLiveYards;
+
   const [
     yardCounts,
     userCounts,
@@ -35,19 +40,23 @@ export async function GET() {
     recentAudit,
   ] = await Promise.all([
     prisma.yard.groupBy({ by: ["active"], _count: { _all: true } }),
-    prisma.user.groupBy({ by: ["role"], where: { active: true }, _count: { _all: true } }),
-    prisma.inventory.groupBy({ by: ["yardId"], _sum: { quantityKg: true } }),
-    prisma.sale.aggregate({ _count: { _all: true }, _sum: { total: true } }),
-    prisma.sale.aggregate({ where: { createdAt: { gte: startOfToday } }, _count: { _all: true }, _sum: { total: true } }),
+    prisma.user.groupBy({
+      by: ["role"],
+      where: { active: true, ...liveYardUsers },
+      _count: { _all: true },
+    }),
+    prisma.inventory.groupBy({ by: ["yardId"], where: activeYardsOnly, _sum: { quantityKg: true } }),
+    prisma.sale.aggregate({ where: activeYardsOnly, _count: { _all: true }, _sum: { total: true } }),
+    prisma.sale.aggregate({ where: { createdAt: { gte: startOfToday }, ...activeYardsOnly }, _count: { _all: true }, _sum: { total: true } }),
     prisma.sale.groupBy({
       by: ["yardId"],
-      where: { createdAt: { gte: last30 } },
+      where: { createdAt: { gte: last30 }, ...activeYardsOnly },
       _count: { _all: true },
       _sum: { total: true, quantityKg: true },
     }),
-    prisma.inwardLoad.groupBy({ by: ["yardId"], where: { status: "RECEIVED" }, _count: { _all: true } }),
+    prisma.inwardLoad.groupBy({ by: ["yardId"], where: { status: "RECEIVED", ...activeYardsOnly }, _count: { _all: true } }),
     prisma.receivable.aggregate({
-      where: { status: { in: ["PENDING", "PARTIAL"] } },
+      where: { status: { in: ["PENDING", "PARTIAL"] }, ...activeYardsOnly },
       _sum: { amount: true },
       _count: { _all: true },
     }),
@@ -57,6 +66,7 @@ export async function GET() {
     }),
     prisma.sale.findMany({
       relationLoadStrategy: "join",
+      where: activeYardsOnly,
       orderBy: { createdAt: "desc" },
       take: 12,
       select: {
@@ -72,6 +82,7 @@ export async function GET() {
     }),
     prisma.inwardLoad.findMany({
       relationLoadStrategy: "join",
+      where: activeYardsOnly,
       orderBy: { createdAt: "desc" },
       take: 12,
       select: {

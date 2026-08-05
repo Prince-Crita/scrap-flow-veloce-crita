@@ -16,8 +16,8 @@ import { chromium, type Browser, type Page } from "playwright";
 
 const BASE = process.env.BASE_URL || "http://localhost:3001";
 const ADMIN = { email: "admin@scrapflow.in", password: "ScrapFlow@2026" };
-const OWNER = { email: "owner@veloce.in", password: "owner123" };
-const MANAGER = { email: "manager@veloce.in", password: "manager123" };
+const OWNER = { email: "test-owner@veloce.test", password: "testowner123" };
+const MANAGER = { email: "test-manager@veloce.test", password: "testmanager123" };
 
 let pass = 0,
   fail = 0;
@@ -438,7 +438,15 @@ async function main() {
         hasPicker: !!document.querySelector(".aHeadActions .aRangeBtn"),
         buttons: [...document.querySelectorAll(".aHeadActions a")].map((a) => a.textContent?.trim() ?? ""),
       }));
-      check("overview header carries the date picker", head.hasPicker);
+      /**
+       * The picker was later REMOVED from this header on purpose — it could only
+       * ever scope the single trends card at the foot of the page while every KPI
+       * above it came from `/api/admin/dashboard`, which computes fixed windows
+       * server-side and takes no parameters, so moving it looked broken. The
+       * reasoning is recorded at the `range` constant in src/app/(admin)/admin/page.tsx.
+       * `/admin/analytics` is where a date range belongs, and it still has one.
+       */
+      check("overview header no longer carries the date picker", !head.hasPicker);
       check("the Analytics / Manage yards buttons are gone", head.buttons.length === 0, head.buttons.join(","));
       await ctx.close();
     }

@@ -30,13 +30,28 @@ type Row = {
   status: "PENDING" | "PARTIAL" | "COMPLETED";
   legacy: boolean;
   createdAt: string;
+  /** Paperwork captured with the allocation. Absent on sales saved before it existed. */
+  documents?: {
+    frontImageUrl: string | null;
+    backImageUrl: string | null;
+    weighbridgeSlipUrl: string | null;
+    others: string[];
+  };
   vehicles: Vehicle[];
 };
 
 const LABEL: Record<Row["status"], string> = {
   PENDING: "Pending",
-  PARTIAL: "Partial",
+  PARTIAL: "In Progress",
   COMPLETED: "Completed",
+};
+
+/** Tab order, left to right — the lifecycle a dispatch moves through. */
+const TABS: Row["status"][] = ["PENDING", "PARTIAL", "COMPLETED"];
+const TOTAL_KEY: Record<Row["status"], "pending" | "partial" | "completed"> = {
+  PENDING: "pending",
+  PARTIAL: "partial",
+  COMPLETED: "completed",
 };
 
 /**
@@ -49,6 +64,7 @@ const LABEL: Record<Row["status"], string> = {
  */
 export function DispatchStatus() {
   const [open, setOpen] = useState<string | null>(null);
+  const [tab, setTab] = useState<Row["status"]>("PENDING");
 
   const { data, isLoading } = useQuery({
     queryKey: ["dispatchStatus"],
@@ -60,6 +76,10 @@ export function DispatchStatus() {
 
   const rows = data?.sales ?? [];
   const totals = data?.totals ?? { pending: 0, partial: 0, completed: 0 };
+  // One status at a time. The three counters were already the only way anyone
+  // read this list; making them the filter means the page shows the answer to
+  // the question that was asked instead of all three at once.
+  const visible = rows.filter((r) => r.status === tab);
 
   return (
     <>
@@ -70,29 +90,29 @@ export function DispatchStatus() {
       {isLoading && <div className="skel" style={{ height: 56 }} />}
 
       {!isLoading && (
-        <div className="dispTotals">
-          <div className="dispTotal pending">
-            <b>{totals.pending}</b>
-            <span>PENDING</span>
-          </div>
-          <div className="dispTotal partial">
-            <b>{totals.partial}</b>
-            <span>PARTIAL</span>
-          </div>
-          <div className="dispTotal done">
-            <b>{totals.completed}</b>
-            <span>COMPLETED</span>
-          </div>
+        <div className="dispTotals" role="tablist" aria-label="Dispatch status">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              className={`dispTotal ${t === "COMPLETED" ? "done" : t.toLowerCase()}${tab === t ? " on" : ""}`}
+              onClick={() => setTab(t)}
+            >
+              <b>{totals[TOTAL_KEY[t]]}</b>
+              <span>{LABEL[t].toUpperCase()}</span>
+            </button>
+          ))}
         </div>
       )}
 
-      {!isLoading && rows.length === 0 && (
+      {!isLoading && visible.length === 0 && (
         <div className="entry" style={{ borderBottom: "none" }}>
-          <span>No sales yet</span>
+          <span>{rows.length === 0 ? "No sales yet" : `Nothing ${LABEL[tab].toLowerCase()}`}</span>
         </div>
       )}
 
-      {rows.map((r) => {
+      {visible.map((r) => {
         const isOpen = open === r.saleId;
         const pct = r.allocatedKg > 0 ? Math.min(100, (r.dispatchedKg / r.allocatedKg) * 100) : 0;
         return (
@@ -128,6 +148,31 @@ export function DispatchStatus() {
                   <b>{fmt(r.remainingKg)} kg</b>
                 </div>
 
+                {(() => {
+                  const d = r.documents;
+                  const docs = d
+                    ? [d.frontImageUrl, d.backImageUrl, d.weighbridgeSlipUrl, ...d.others].filter(
+                        (u): u is string => !!u
+                      )
+                    : [];
+                  if (docs.length === 0) return null;
+                  return (
+                    <>
+                      <div className="rlRow">
+                        <span>Documents</span>
+                        <b>{docs.length}</b>
+                      </div>
+                      <div className="dispShots">
+                        {docs.map((u, k) => (
+                          <a key={`d${k}`} href={u} target="_blank" rel="noreferrer">
+                            <img src={u} alt="dispatch document" />
+                          </a>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
+
                 {r.legacy && (
                   <p className="hint" style={{ marginTop: 6 }}>
                     Recorded before dispatch tracking existed — stock left the yard at sale time.
@@ -136,7 +181,7 @@ export function DispatchStatus() {
 
                 {!r.legacy && r.vehicles.length === 0 && (
                   <p className="hint" style={{ marginTop: 6 }}>
-                    Waiting for the Manager to load a vehicle.
+                    Waiting for the Supervisor to load a vehicle.
                   </p>
                 )}
 

@@ -132,10 +132,42 @@ export async function requireAdmin(): Promise<AdminContext | { res: NextResponse
   return { user, prisma: adminDb };
 }
 
+/**
+ * Largest JSON body an ordinary route will buffer.
+ *
+ * Without a ceiling, `req.json()` buffers whatever an authenticated client sends
+ * before Zod ever sees it, so one request could pin server memory. Every route
+ * on this platform except the two image-carrying ones sends a few kilobytes —
+ * the largest realistic body is an inward load of 50 lines or a sale with 20
+ * document URLs, both well under 20 KB — so 256 KB is generous by two orders of
+ * magnitude and still bounds the damage.
+ *
+ * `content-length` can be absent or untrue, which is why this is a cheap first
+ * gate rather than the only defence: the schemas' own `.max()` still decide what
+ * is acceptable.
+ */
+export const MAX_BODY_BYTES = 256 * 1024;
+
+/**
+ * Ceiling for the endpoints that legitimately carry image data URLs.
+ *
+ * `/api/uploads` and `/api/ocr` cap the data URL itself at 12,000,000 characters
+ * and `/api/ocr` may carry two of them, so this has to clear ~24 MB of base64
+ * plus envelope.
+ */
+export const MAX_IMAGE_BODY_BYTES = 26 * 1024 * 1024;
+
 export async function parseBody<T extends z.ZodTypeAny>(
   req: Request,
-  schema: T
+  schema: T,
+  opts?: { maxBytes?: number }
 ): Promise<{ data: z.infer<T> } | { res: NextResponse }> {
+  const declared = Number(req.headers.get("content-length") ?? "");
+  const limit = opts?.maxBytes ?? MAX_BODY_BYTES;
+  if (Number.isFinite(declared) && declared > limit) {
+    return { res: fail("PAYLOAD_TOO_LARGE", "That request is too large", 413) };
+  }
+
   let raw: unknown;
   try {
     raw = await req.json();

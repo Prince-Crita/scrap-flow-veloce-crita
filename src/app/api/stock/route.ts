@@ -8,6 +8,7 @@ export async function GET() {
   const { prisma } = guard;
 
   const skus = await prisma.sku.findMany({
+    relationLoadStrategy: "join",
     orderBy: { sortOrder: "asc" },
     include: { inventory: true },
   });

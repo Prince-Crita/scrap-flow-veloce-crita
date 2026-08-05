@@ -73,13 +73,22 @@ async function main() {
   const k = d.kpis;
   const ds = d.dispatchSummary;
 
-  // ── Derived expectations ─────────────────────────────────────────────────
-  const totalLoads = await prisma.outwardLoad.count();
-  const totalKg = (await prisma.outwardLoad.aggregate({ _sum: { totalKg: true } }))._sum.totalKg ?? 0;
-  const pending = await prisma.sale.count({ where: { dispatchStatus: "PENDING" } });
-  const partial = await prisma.sale.count({ where: { dispatchStatus: "PARTIAL" } });
-  const completed = await prisma.sale.count({ where: { dispatchStatus: "COMPLETED" } });
-  const legacy = await prisma.sale.count({ where: { dispatchStatus: null } });
+  /**
+   * ── Derived expectations ─────────────────────────────────────────────────
+   *
+   * Scoped to yards that are still operating, because that is what the platform
+   * endpoints now count (src/lib/active-yards.ts). An archived yard keeps every
+   * dispatch it ever made, but those rows stopped being part of the platform's
+   * figures, so comparing against the whole database would assert the behaviour
+   * this release deliberately removed.
+   */
+  const live = { yard: { active: true } };
+  const totalLoads = await prisma.outwardLoad.count({ where: live });
+  const totalKg = (await prisma.outwardLoad.aggregate({ where: live, _sum: { totalKg: true } }))._sum.totalKg ?? 0;
+  const pending = await prisma.sale.count({ where: { dispatchStatus: "PENDING", ...live } });
+  const partial = await prisma.sale.count({ where: { dispatchStatus: "PARTIAL", ...live } });
+  const completed = await prisma.sale.count({ where: { dispatchStatus: "COMPLETED", ...live } });
+  const legacy = await prisma.sale.count({ where: { dispatchStatus: null, ...live } });
 
   console.log("\nDispatch KPIs match the database:");
   check("total dispatches", k.dispatchesTotal === totalLoads, `${k.dispatchesTotal} vs ${totalLoads}`);
@@ -102,7 +111,7 @@ async function main() {
 
   console.log("\nAwaiting dispatch:");
   const openSales = await prisma.sale.findMany({
-    where: { dispatchStatus: { in: ["PENDING", "PARTIAL"] } },
+    where: { dispatchStatus: { in: ["PENDING", "PARTIAL"] }, ...live },
     select: { quantityKg: true, dispatchedKg: true },
   });
   const expectedAwaiting = openSales.reduce(
@@ -167,7 +176,7 @@ async function main() {
   const a = await aRes.json();
 
   const winLoads = await prisma.outwardLoad.aggregate({
-    where: { createdAt: { gte: since } },
+    where: { createdAt: { gte: since }, ...live },
     _count: { _all: true },
     _sum: { totalKg: true },
   });
@@ -201,10 +210,10 @@ async function main() {
   check("totals expose dispatchCount", a.totals.dispatchCount === winLoads._count._all);
 
   // Status distribution is window-scoped here, unlike the all-time dashboard.
-  const winPending = await prisma.sale.count({ where: { createdAt: { gte: since }, dispatchStatus: "PENDING" } });
-  const winPartial = await prisma.sale.count({ where: { createdAt: { gte: since }, dispatchStatus: "PARTIAL" } });
-  const winDone = await prisma.sale.count({ where: { createdAt: { gte: since }, dispatchStatus: "COMPLETED" } });
-  const winLegacy = await prisma.sale.count({ where: { createdAt: { gte: since }, dispatchStatus: null } });
+  const winPending = await prisma.sale.count({ where: { createdAt: { gte: since }, dispatchStatus: "PENDING", ...live } });
+  const winPartial = await prisma.sale.count({ where: { createdAt: { gte: since }, dispatchStatus: "PARTIAL", ...live } });
+  const winDone = await prisma.sale.count({ where: { createdAt: { gte: since }, dispatchStatus: "COMPLETED", ...live } });
+  const winLegacy = await prisma.sale.count({ where: { createdAt: { gte: since }, dispatchStatus: null, ...live } });
   const dist: { label: string; value: number }[] = a.dispatch.statusDistribution;
   const bucket = (l: string) => dist.find((x) => x.label === l)?.value ?? -1;
   check("status distribution has three buckets", dist.length === 3, JSON.stringify(dist));
@@ -217,7 +226,7 @@ async function main() {
   );
 
   const winOpen = await prisma.sale.findMany({
-    where: { createdAt: { gte: since }, dispatchStatus: { in: ["PENDING", "PARTIAL"] } },
+    where: { createdAt: { gte: since }, dispatchStatus: { in: ["PENDING", "PARTIAL"] }, ...live },
     select: { quantityKg: true, dispatchedKg: true },
   });
   check(
@@ -227,7 +236,7 @@ async function main() {
   );
 
   const lineKg = (await prisma.outwardLoadLine.aggregate({
-    where: { createdAt: { gte: since } },
+    where: { createdAt: { gte: since }, ...live },
     _sum: { quantityKg: true },
   }))._sum.quantityKg ?? 0;
 

@@ -449,6 +449,18 @@ model Sale {
   vehicleNumber   String?
   driverName      String?
   driverPhone     String?
+  /// Dispatch paperwork captured with the sale: the vehicle as it left, the
+  /// weighbridge ticket, and anything else the buyer or the transporter needed.
+  ///
+  /// Nullable and additive — every historical sale reads as "no documents", which
+  /// is exactly what it is, so nothing had to be back-filled. Kept on the Sale
+  /// because these are captured at ALLOCATION time by the Owner; the Manager's
+  /// per-vehicle photos still live on OutwardLoad, where the vehicle does.
+  frontImageUrl      String?
+  backImageUrl       String?
+  weighbridgeSlipUrl String?
+  /// Supporting documents, optional. Ordered as uploaded.
+  documentUrls       String[]
   status          SaleStatus      @default(DISPATCHED)
   /// Kilograms already loaded onto vehicles against this sale.
   ///

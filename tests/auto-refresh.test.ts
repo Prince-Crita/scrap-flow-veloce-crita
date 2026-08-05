@@ -139,10 +139,17 @@ async function main() {
     const cachedFirst = calls.filter((c) => c.url.startsWith("/api/stock")).length;
     check("Stock and Sort were visited first, so their data is cached", cachedFirst > 0);
 
-    const addChip = page.locator(".chip", { hasText: /\+\s*Add Material/i }).first();
-    check("the Add Material control is present", (await addChip.count()) > 0);
-    await addChip.click();
-    await page.waitForTimeout(500);
+    /**
+     * Add Material lives inside the material picker now — the standalone chip row
+     * was removed in the approved Inward redesign. Same sheet, same API call;
+     * only the way it is reached changed.
+     */
+    await page.locator(".actCell").first().click();
+    await page.waitForTimeout(600);
+    const addBtn = page.locator(".sheet button", { hasText: /\+\s*Add Material/i }).first();
+    check("the Add Material control is present", (await addBtn.count()) > 0);
+    await addBtn.click();
+    await page.waitForTimeout(600);
 
     await page.locator(".sheet input").first().fill(matName);
     await page.waitForTimeout(150);

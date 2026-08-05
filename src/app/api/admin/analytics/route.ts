@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { requireAdmin, parseQuery, ok } from "@/lib/api";
+import { inYardScope, andYardScope } from "@/lib/active-yards";
 
 export const dynamic = "force-dynamic";
 
@@ -86,13 +87,23 @@ export async function GET(req: Request) {
   const untilFilter = until ? Prisma.sql`AND "createdAt" < ${until}` : Prisma.empty;
   const lineUntilFilter = until ? Prisma.sql`AND l."createdAt" < ${until}` : Prisma.empty;
 
+  /**
+   * Which yards these figures cover.
+   *
+   * Unfiltered, analytics describe the yards that are still operating — an
+   * archived yard stopped trading, so leaving it in would keep its history
+   * inflating every platform total. An explicit `yardId` is a deliberate
+   * drill-down and is always honoured, archived or not.
+   */
+  const scopeWhere = inYardScope(yardId);
+
   // Reused predicate fragment. `yardId` is a validated string or null.
-  const yardFilter = yardId ? Prisma.sql`AND "yardId" = ${yardId}` : Prisma.empty;
+  const yardFilter = andYardScope(yardId);
   /**
    * The same predicate, qualified. Sku and Sale both carry a `yardId`, so a bare
    * `"yardId"` inside a joined query would be ambiguous and fail to plan.
    */
-  const lineYardFilter = yardId ? Prisma.sql`AND l."yardId" = ${yardId}` : Prisma.empty;
+  const lineYardFilter = andYardScope(yardId, Prisma.sql`l."yardId"`);
 
   /**
    * ONE batch, not two.
@@ -150,18 +161,18 @@ export async function GET(req: Request) {
         GROUP BY 1 ORDER BY 1`,
 
       prisma.yard.findMany({
-        where: yardId ? { id: yardId } : undefined,
+        where: yardId ? { id: yardId } : { active: true },
         orderBy: { yardCode: "asc" },
         select: { id: true, yardCode: true, yardName: true, active: true },
       }),
       prisma.inventory.groupBy({
         by: ["yardId"],
-        where: yardId ? { yardId } : undefined,
+        where: scopeWhere,
         _sum: { quantityKg: true },
       }),
       prisma.inwardLoad.groupBy({
         by: ["materialLabel"],
-        where: { createdAt: inWindow, ...(yardId ? { yardId } : {}) },
+        where: { createdAt: inWindow, ...scopeWhere },
         _sum: { totalKg: true },
         _count: { _all: true },
         orderBy: { _sum: { totalKg: "desc" } },
@@ -185,38 +196,36 @@ export async function GET(req: Request) {
         FROM "InwardLoad" i
         JOIN "Vendor" v ON v."id" = i."vendorId"
         LEFT JOIN "Yard" y ON y."id" = v."yardId"
-        WHERE i."createdAt" >= ${since} ${until ? Prisma.sql`AND i."createdAt" < ${until}` : Prisma.empty} ${
-          yardId ? Prisma.sql`AND i."yardId" = ${yardId}` : Prisma.empty
-        }
+        WHERE i."createdAt" >= ${since} ${until ? Prisma.sql`AND i."createdAt" < ${until}` : Prisma.empty} ${andYardScope(yardId, Prisma.sql`i."yardId"`)}
         GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 12`,
       prisma.receivable.groupBy({
         by: ["status"],
-        where: yardId ? { yardId } : undefined,
+        where: scopeWhere,
         _count: { _all: true },
         _sum: { amount: true },
       }),
       prisma.inventory.findMany({
         relationLoadStrategy: "join",
-        where: { quantityKg: { gt: 0 }, ...(yardId ? { yardId } : {}) },
+        where: { quantityKg: { gt: 0 }, ...scopeWhere },
         select: { quantityKg: true, sku: { select: { name: true, icon: true, isMixedBucket: true } } },
       }),
 
     // ---- per-yard trade over the window, for the comparison series ----
     prisma.sale.groupBy({
       by: ["yardId"],
-      where: { createdAt: inWindow, ...(yardId ? { yardId } : {}) },
+      where: { createdAt: inWindow, ...scopeWhere },
       _sum: { total: true, quantityKg: true },
       _count: { _all: true },
     }),
     prisma.inwardLoad.groupBy({
       by: ["yardId"],
-      where: { createdAt: inWindow, ...(yardId ? { yardId } : {}) },
+      where: { createdAt: inWindow, ...scopeWhere },
       _sum: { totalKg: true },
       _count: { _all: true },
     }),
     prisma.inwardLoad.groupBy({
       by: ["yardId"],
-      where: { status: "RECEIVED", ...(yardId ? { yardId } : {}) },
+      where: { status: "RECEIVED", ...scopeWhere },
       _count: { _all: true },
     }),
 
@@ -234,7 +243,7 @@ export async function GET(req: Request) {
 
     prisma.outwardLoad.groupBy({
       by: ["yardId"],
-      where: { createdAt: inWindow, ...(yardId ? { yardId } : {}) },
+      where: { createdAt: inWindow, ...scopeWhere },
       _sum: { totalKg: true },
       _count: { _all: true },
     }),
@@ -243,7 +252,7 @@ export async function GET(req: Request) {
     // other series here; the dashboard carries the all-time equivalent.
     prisma.sale.groupBy({
       by: ["dispatchStatus"],
-      where: { createdAt: inWindow, ...(yardId ? { yardId } : {}) },
+      where: { createdAt: inWindow, ...scopeWhere },
       _count: { _all: true },
       _sum: { quantityKg: true, dispatchedKg: true },
     }),

@@ -52,6 +52,11 @@ const schema = z.object({
   vehicleNumber: z.string().max(20).optional().nullable(),
   driverName: z.string().max(80).optional().nullable(),
   driverPhone: z.string().max(15).optional().nullable(),
+  /** Dispatch paperwork captured with the allocation. All optional. */
+  frontImageUrl: z.string().max(600).optional().nullable(),
+  backImageUrl: z.string().max(600).optional().nullable(),
+  weighbridgeSlipUrl: z.string().max(600).optional().nullable(),
+  documentUrls: z.array(z.string().max(600)).max(20).optional().default([]),
 });
 
 export async function POST(req: Request) {
@@ -143,6 +148,10 @@ export async function POST(req: Request) {
         vehicleNumber: d.vehicleNumber ?? null,
         driverName: d.driverName ?? null,
         driverPhone: d.driverPhone ?? null,
+        frontImageUrl: d.frontImageUrl ?? null,
+        backImageUrl: d.backImageUrl ?? null,
+        weighbridgeSlipUrl: d.weighbridgeSlipUrl ?? null,
+        documentUrls: d.documentUrls ?? [],
         status: "DISPATCHED",
         // The sale is an ALLOCATION: nothing physically moves yet. Stock is
         // deducted vehicle by vehicle in the Manager's Outward workflow, which

@@ -152,9 +152,21 @@ async function main() {
 
   try {
     console.log("There is exactly ONE fixture yard — no duplicates were created:");
+    /**
+     * Operational yards whose NAME happens to trip the heuristic below.
+     *
+     * `TESTYARD1` / "Testing Yard 1" is the yard handed to the client for
+     * acceptance testing — a real yard with real users, created by
+     * `npm run demo:prepare`, never by the fixture tooling. Without this the
+     * duplicate-sandbox guard fires on it, which says nothing about fixture
+     * isolation and hides the failure it actually exists to catch.
+     */
+    const OPERATIONAL = new Set(["TESTYARD1"]);
     const allYards = await prisma.yard.findMany({ select: { yardCode: true, yardName: true } });
     const fixtureLike = allYards.filter(
-      (y) => /TEST|FIXTURE|QA|SANDBOX/i.test(y.yardCode) || /test|fixture|qa|sandbox/i.test(y.yardName)
+      (y) =>
+        !OPERATIONAL.has(y.yardCode) &&
+        (/TEST|FIXTURE|QA|SANDBOX/i.test(y.yardCode) || /test|fixture|qa|sandbox/i.test(y.yardName))
     );
     check("exactly one fixture-looking yard exists", fixtureLike.length === 1, fixtureLike.map((y) => y.yardCode).join(", "));
     check(`it is ${TEST_YARD_CODE}`, fixtureLike[0]?.yardCode === TEST_YARD_CODE, fixtureLike[0]?.yardCode);

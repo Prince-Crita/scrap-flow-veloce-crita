@@ -883,7 +883,7 @@ export default function AdminAnalyticsPage() {
                 <EmptyChartState
                   icon="🚛"
                   title="No dispatches in this window"
-                  hint="A sale allocates stock; a dispatch is the vehicle that carries it out. This chart populates as managers load vehicles."
+                  hint="A sale allocates stock; a dispatch is the vehicle that carries it out. This chart populates as supervisors load vehicles."
                 />
               )}
             </ChartCard>

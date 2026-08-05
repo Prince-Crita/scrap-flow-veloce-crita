@@ -15,7 +15,15 @@ export async function GET() {
   if ("res" in guard) return guard.res;
   const { prisma } = guard;
 
+  /**
+   * `join` because this is the deepest read in the yard app: Sale → its outward
+   * lines → each line's load → that load's images and dispatcher. Prisma's
+   * default resolves one relation LEVEL per round trip, and levels cannot
+   * overlap, so the Owner's Dispatch Status tab was paying five serial trips to
+   * Neon for one screen. One LATERAL-joined statement returns the same rows.
+   */
   const sales = await prisma.sale.findMany({
+    relationLoadStrategy: "join",
     orderBy: { createdAt: "desc" },
     take: 50,
     include: {
@@ -52,6 +60,13 @@ export async function GET() {
       legacy: s.dispatchedKg === null,
       total: s.total,
       createdAt: s.createdAt,
+      /** Paperwork captured with the allocation, alongside the per-vehicle shots. */
+      documents: {
+        frontImageUrl: s.frontImageUrl,
+        backImageUrl: s.backImageUrl,
+        weighbridgeSlipUrl: s.weighbridgeSlipUrl,
+        others: s.documentUrls,
+      },
       vehicles: s.outwardLoadLines.map((l) => ({
         dispatchNumber: l.load.dispatchNumber,
         vehicleNumber: l.load.vehicleNumber,
