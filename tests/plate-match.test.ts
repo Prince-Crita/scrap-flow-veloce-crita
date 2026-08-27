@@ -13,7 +13,7 @@ import {
   normalisePlate,
   snapToKnownPlate,
   SNAP_CONFIDENCE_CEILING,
-} from "../src/lib/plate-match";
+} from "../src/backend/services/plate-match";
 
 let pass = 0,
   fail = 0;

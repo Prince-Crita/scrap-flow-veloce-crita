@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { requireYard, parseBody, ok, fail, MAX_IMAGE_BODY_BYTES } from "@/lib/api";
-import { storeImage, StorageNotConfiguredError } from "@/lib/storage";
-import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/lib/image-validate";
-import { tooManyRequests } from "@/lib/rate-limit";
-import { rateLimitShared } from "@/lib/rate-limit-shared";
+import { requireYard, parseBody, ok, fail, MAX_IMAGE_BODY_BYTES } from "@/backend/http/api";
+import { storeImage, StorageNotConfiguredError } from "@/backend/storage/storage";
+import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/backend/storage/image-validate";
+import { tooManyRequests } from "@/backend/http/rate-limit";
+import { rateLimitShared } from "@/backend/http/rate-limit-shared";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +14,19 @@ const schema = z.object({
    * the real work: arithmetic size check, then file-signature detection.
    */
   dataUrl: z.string().startsWith("data:image/").max(MAX_DATA_URL_CHARS),
-  // `sale-document` is the Sell page's optional supporting paperwork. Additive:
-  // the enum is a filename-prefix whitelist, so a new member changes nothing
-  // about how the existing kinds are validated or stored.
-  kind: z.enum(["vehicle-front", "vehicle-back", "material", "scale", "weighbridge-slip", "sale-document"]),
+  // `sale-document` is the Sell page's optional supporting paperwork, `invoice`
+  // the vendor's invoice / challan photographed at Inward. Additive: the enum is
+  // a filename-prefix whitelist, so a new member changes nothing about how the
+  // existing kinds are validated or stored.
+  kind: z.enum([
+    "vehicle-front",
+    "vehicle-back",
+    "material",
+    "scale",
+    "weighbridge-slip",
+    "sale-document",
+    "invoice",
+  ]),
   lotNumber: z.string().max(40).optional(),
   index: z.number().int().min(0).max(50).optional(),
 });

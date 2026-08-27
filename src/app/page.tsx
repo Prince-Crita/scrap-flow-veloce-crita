@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
-import { homePathFor } from "@/lib/permissions";
+import { auth } from "@/backend/auth/auth";
+import { homePathFor } from "@/shared/permissions";
 
 /** Role-aware landing: ADMIN → console, OWNER/MANAGER → the yard app. */
 export default async function Home() {

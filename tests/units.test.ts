@@ -7,7 +7,7 @@
  *
  * Usage: `npx tsx tests/units.test.ts`.
  */
-import { UNITS, toKilograms, fromKilograms, type UnitCode } from "../src/lib/units";
+import { UNITS, toKilograms, fromKilograms, type UnitCode } from "../src/shared/units";
 
 let pass = 0,
   fail = 0;

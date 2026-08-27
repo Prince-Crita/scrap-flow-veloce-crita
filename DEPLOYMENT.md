@@ -17,7 +17,7 @@ that and depends on it.
 | `DIRECT_URL` | **yes** | Neon **unpooled** endpoint — *same database, same credentials*, host without `-pooler`. |
 | `AUTH_SECRET` | **yes** | Auth.js JWT signing key. 32+ random bytes. |
 | `NEXTAUTH_SECRET` | **yes** | Same value as `AUTH_SECRET`. |
-| `NEXTAUTH_URL` | **yes** | Public origin, e.g. `https://yard.example.com`. |
+| `NEXTAUTH_URL` | **yes** | Public **origin only**, e.g. `https://yard.example.com`. Never include a base path — see §1.1. |
 | `BLOB_READ_WRITE_TOKEN` | prod | Vercel Blob token for weighbridge photo storage. |
 | `OCR_SERVICE_URL` | prod | Where the ANPR sidecar listens. `http://localhost:8000` when co-located. |
 | `OCR_SERVICE_SECRET` | prod | Shared secret between the app and the sidecar. **Change it.** |
@@ -33,6 +33,50 @@ that and depends on it.
 | `LOGIN_LOCKOUT_MAX_SECONDS` | no | Lock ceiling, so auto-unlock always arrives. Default `3600`. |
 | `LOGIN_LOCKOUT_DECAY_SECONDS` | no | Idle window after which the failure streak resets. Default `900`. |
 | `SF_REALTIME_PG` | no | `0` disables cross-instance realtime (degrades to per-instance). |
+| `NEXT_PUBLIC_BASE_PATH` | no | Path prefix the app is mounted under (company server). Unset locally and on Vercel. **Build-time.** See §1.1. |
+| `NEXT_PUBLIC_API_ORIGIN` | no | Absolute API origin, only if the API is served from a different host than the pages. Empty = same origin. |
+| `NEXT_OUTPUT_STANDALONE` | no | `1` emits `.next/standalone` — a self-contained Node server for a company box. |
+
+### 1.1 Base path — where the company prefix goes
+
+The application may eventually be served under a project prefix, e.g.
+`/client-trial/veloceinventory`. **That example is a placeholder and appears nowhere
+in the code.** The real value is supplied later, in one variable:
+
+```bash
+NEXT_PUBLIC_BASE_PATH="/the/real/prefix" npm run build
+```
+
+It must be set **at build time**, not just at runtime: Next.js compiles `basePath`
+into the client bundle, so a server-only variable would leave the browser calling
+the wrong URLs.
+
+What that one variable drives:
+
+| Concern | Handled by |
+|---|---|
+| Page routes, `<Link>`, `router.push`, server `redirect()` | Next.js `basePath` (`next.config.ts`) |
+| `/_next/*`, CSS/JS, `next/image`, favicon | Next.js `assetPrefix` (`next.config.ts`) |
+| `fetch()` to API routes | `apiUrl()` in `src/shared/config/paths.ts`, used by the API client |
+| Realtime `EventSource` | `apiUrl()` — Next does not prefix raw URLs |
+| Stored upload URLs in `<img src>` | `assetUrl()` — DB rows stay prefix-free |
+| Auth.js routes and callbacks | `AUTH_BASE_PATH` (`auth.config.ts` + `SessionProvider`) |
+| Middleware redirects | `nextUrl.clone()`, not `new URL(path, nextUrl)` |
+
+Unset, every one of those resolves to exactly the path it used before, which is why
+local development and the current Vercel deployment need no configuration at all.
+
+**`NEXTAUTH_URL` stays origin-only.** `https://host`, never `https://host/prefix`.
+Next.js strips the deployment prefix before a Route Handler runs, so Auth.js's
+server side must keep its default `/api/auth`; an `AUTH_URL`/`NEXTAUTH_URL` carrying
+the prefix makes Auth.js infer a prefixed basePath and answer `400 "Bad request."`
+to every session call. Only the browser side is prefixed, and that is handled in
+code (`SessionProvider basePath`), not by an environment variable. Both failure
+modes were reproduced against a real prefixed build before this was written.
+
+Verified end to end: built and run with
+`NEXT_PUBLIC_BASE_PATH=/client-trial/veloceinventory`, all pages, APIs, auth
+redirects, assets and the admin console behave identically to the unprefixed build.
 
 ### Why two URLs for one database
 
@@ -239,7 +283,7 @@ every row.
 
 Multi-instance safe as of 2026-07-26. What makes that true, and what to preserve:
 
-- **Realtime** is Postgres `LISTEN`/`NOTIFY` (`src/lib/realtime-pg.ts`), so an event
+- **Realtime** is Postgres `LISTEN`/`NOTIFY` (`src/backend/realtime/realtime-pg.ts`), so an event
   published on one instance reaches subscribers on every other. Verified live across
   two instances (`npm run test:realtime-multi`). The listener needs `DIRECT_URL`.
 - **Rate limiting** for upload and OCR is a shared counter in `RateLimitCounter`, so
@@ -268,8 +312,8 @@ latency is round-trip-dominated, so deploy the app in the same region as the dat
 | OCR always returns `fallback: true` | Sidecar not running, or Python deps missing | `/api/admin/ocr-status` gives the reason; `pip install -r ocr-service/requirements.txt`. |
 | `detector: false` on `/health` | The weight fetch failed (offline/proxied host), or `OCR_SKIP_MODEL_FETCH=1` | Look for the `[models]` line in the service log — it states the reason. Re-run `python ocr-service/bootstrap_models.py`, or set `OCR_PLATE_MODEL_URL` to an internally reachable mirror. Plate reading still works via morphology meanwhile. |
 | A user cannot sign in with the right password | Account locked | `GET /api/admin/login-locks`; it auto-unlocks, or `POST` to release it. |
-| Whole office locked out of login | Per-IP limiter — one NAT address | Raise the `auth` limit in `src/lib/rate-limit.ts`; per-account lockout is the real defence. |
-| Dashboard suddenly >1 s | Duplicate Prisma pools, or `connection_limit` lowered | Verify `src/lib/prisma.ts` still pins on `globalThis`; check the URL. |
+| Whole office locked out of login | Per-IP limiter — one NAT address | Raise the `auth` limit in `src/backend/http/rate-limit.ts`; per-account lockout is the real defence. |
+| Dashboard suddenly >1 s | Duplicate Prisma pools, or `connection_limit` lowered | Verify `src/backend/db/prisma.ts` still pins on `globalThis`; check the URL. |
 | `db:verify` reports a lot mismatch | Stock changed outside the app | Do **not** "fix" inventory directly. Investigate via `AuditLog`. |
 | Admin sees a yard's data unexpectedly | An impersonation session is open | `/admin/audit`; sessions are first-class rows and revocable. |
 

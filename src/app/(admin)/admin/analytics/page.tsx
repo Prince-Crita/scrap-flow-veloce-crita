@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { getJson } from "@/lib/fetcher";
+import { getJson } from "@/frontend/lib/api-client";
 import {
   PageHead,
   Kpi,
@@ -18,7 +18,7 @@ import {
   kg,
   num,
   pct,
-} from "@/components/admin/ui";
+} from "@/frontend/components/admin/ui";
 import {
   ChartCard,
   Legend,
@@ -36,9 +36,9 @@ import {
   bucketLabel,
   type Granularity,
   type ChartDatum,
-} from "@/components/admin/charts";
-import { useAdminRealtime } from "@/components/admin/admin-realtime";
-import { DateRangePicker, DEFAULT_RANGE, type DateRange } from "@/components/admin/date-range";
+} from "@/frontend/components/admin/charts";
+import { useAdminRealtime } from "@/frontend/components/admin/admin-realtime";
+import { DateRangePicker, DEFAULT_RANGE, type DateRange } from "@/frontend/components/admin/date-range";
 
 /* ────────────────────────────── types ────────────────────────────── */
 

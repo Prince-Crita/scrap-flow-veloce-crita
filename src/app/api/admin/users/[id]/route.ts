@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { requireAdmin, parseBody, ok, fail } from "@/lib/api";
-import { audit, diffFields } from "@/lib/audit";
+import { requireAdmin, parseBody, ok, fail } from "@/backend/http/api";
+import { audit, diffFields } from "@/backend/services/audit";
 
 export const dynamic = "force-dynamic";
 

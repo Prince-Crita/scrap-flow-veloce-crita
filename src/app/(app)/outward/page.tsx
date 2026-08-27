@@ -2,12 +2,12 @@
 
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getJson, sendJson, newRequestId, ApiError } from "@/lib/fetcher";
-import { fmt } from "@/lib/format";
-import { UNITS, toKilograms, type UnitCode } from "@/lib/units";
-import { useUI } from "@/components/ui-provider";
-import { CameraSheet, type CaptureData } from "@/components/camera-sheet";
-import { useInvalidateChannels } from "@/components/realtime/provider";
+import { getJson, sendJson, newRequestId, ApiError } from "@/frontend/lib/api-client";
+import { fmt } from "@/shared/format";
+import { UNITS, toKilograms, type UnitCode } from "@/shared/units";
+import { useUI } from "@/frontend/components/ui-provider";
+import { CameraSheet, type CaptureData } from "@/frontend/components/camera-sheet";
+import { useInvalidateChannels } from "@/frontend/components/realtime/provider";
 
 /**
  * Manager Outward — loading sold material onto vehicles.

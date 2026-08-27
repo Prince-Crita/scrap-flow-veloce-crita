@@ -1,8 +1,8 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
-import { getUser } from "@/lib/api";
-import { LOCAL_UPLOAD_DIR } from "@/lib/storage";
+import { getUser } from "@/backend/http/api";
+import { LOCAL_UPLOAD_DIR } from "@/backend/storage/storage";
 
 /**
  * Serves locally-stored upload bytes at the SAME URL shape they are saved under

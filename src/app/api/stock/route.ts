@@ -1,4 +1,4 @@
-import { requireYard, ok } from "@/lib/api";
+import { requireYard, ok } from "@/backend/http/api";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ export async function GET() {
   const skus = await prisma.sku.findMany({
     relationLoadStrategy: "join",
     orderBy: { sortOrder: "asc" },
-    include: { inventory: true },
+    include: { inventory: true, material: { select: { id: true, name: true, category: true } } },
   });
 
   const data = skus.map((s) => {
@@ -36,6 +36,18 @@ export async function GET() {
        * ready as a result of exactly that movement.
        */
       updatedAt: s.inventory?.updatedAt?.toISOString() ?? null,
+      /**
+       * The parent material this SKU was segregated out of. Read-only, additive —
+       * nothing computes from it server-side, and every quantity, threshold and
+       * `ready` flag above is unchanged.
+       *
+       * Exposed so the Stock screen can browse the yard the way the material tree
+       * is already shaped: material (MS Scrap, PET Plastic…) → its SKUs. SKUs
+       * predating the material link carry null and the client groups them apart.
+       */
+      materialId: s.material?.id ?? null,
+      materialName: s.material?.name ?? null,
+      materialCategory: s.material?.category ?? null,
     };
   });
 

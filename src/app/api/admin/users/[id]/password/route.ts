@@ -1,7 +1,7 @@
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { requireAdmin, parseBody, ok, fail } from "@/lib/api";
-import { audit } from "@/lib/audit";
+import { requireAdmin, parseBody, ok, fail } from "@/backend/http/api";
+import { audit } from "@/backend/services/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ const schema = z.object({
  * the point of a reset, but `mustChangePassword` defaults to true so an
  * admin-known password cannot remain in use. The audit entry records that a
  * reset happened and by whom; it never records the password itself, and
- * src/lib/audit.ts strips anything password-shaped as a second safeguard.
+ * src/backend/services/audit.ts strips anything password-shaped as a second safeguard.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const guard = await requireAdmin();

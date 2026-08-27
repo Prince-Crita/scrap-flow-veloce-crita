@@ -26,7 +26,7 @@ import {
   ENTITY_CHANNEL,
   RECORD_SCHEMAS,
   LEDGER_FIELDS,
-} from "../src/lib/admin-records";
+} from "../src/backend/services/admin-records";
 
 const prisma = new PrismaClient();
 const BASE = process.env.BASE_URL || "http://localhost:3001";

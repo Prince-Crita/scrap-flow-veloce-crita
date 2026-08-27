@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { requireUser, parseBody, ok } from "@/lib/api";
-import { adminDb } from "@/lib/tenant";
-import { publish } from "@/lib/realtime";
-import { nextStreak } from "@/lib/streak";
+import { requireUser, parseBody, ok } from "@/backend/http/api";
+import { adminDb } from "@/backend/db/tenant";
+import { publish } from "@/backend/realtime/realtime";
+import { nextStreak } from "@/backend/services/streak";
 
 const schema = z.object({
   xp: z.number().int().min(0).max(100_000_000),
@@ -15,7 +15,7 @@ const schema = z.object({
  *
  * It is also where the daily streak is maintained: any XP-earning action counts
  * as activity for that day, evaluated in the yard's own timezone (see
- * src/lib/streak.ts). Doing it here means the streak follows real work rather
+ * src/backend/services/streak.ts). Doing it here means the streak follows real work rather
  * than page visits.
  *
  * ADMIN is deliberately excluded: an admin inspecting a yard must not accrue

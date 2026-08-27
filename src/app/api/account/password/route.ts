@@ -1,8 +1,8 @@
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { requireUser, parseBody, ok, fail } from "@/lib/api";
-import { adminDb } from "@/lib/tenant";
-import { audit } from "@/lib/audit";
+import { requireUser, parseBody, ok, fail } from "@/backend/http/api";
+import { adminDb } from "@/backend/db/tenant";
+import { audit } from "@/backend/services/audit";
 
 export const dynamic = "force-dynamic";
 

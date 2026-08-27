@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { requireAdmin, parseBody, ok, fail } from "@/lib/api";
-import { clearLock, lockoutConfig } from "@/lib/login-lockout";
+import { requireAdmin, parseBody, ok, fail } from "@/backend/http/api";
+import { clearLock, lockoutConfig } from "@/backend/auth/login-lockout";
 
 export const dynamic = "force-dynamic";
 

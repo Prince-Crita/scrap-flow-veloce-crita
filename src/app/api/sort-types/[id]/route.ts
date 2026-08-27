@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { requireYardCapability, parseBody, ok, fail } from "@/lib/api";
-import { publishMany } from "@/lib/realtime";
-import { audit } from "@/lib/audit";
-import { countSkuReferences, describeReferences } from "@/lib/sku-references";
-import type { ScopedDb } from "@/lib/tenant";
+import { requireYardCapability, parseBody, ok, fail } from "@/backend/http/api";
+import { publishMany } from "@/backend/realtime/realtime";
+import { audit } from "@/backend/services/audit";
+import { countSkuReferences, describeReferences } from "@/backend/services/sku-references";
+import type { ScopedDb } from "@/backend/db/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * Rename and activate/deactivate are PATCH; DELETE deactivates unless
  * `?permanent=1`, which erases the row only when nothing references it and no
  * stock remains. Those rules are the same ones Materials uses, and they are
- * shared rather than restated — see src/lib/sku-references.ts.
+ * shared rather than restated — see src/backend/services/sku-references.ts.
  */
 
 const patchSchema = z

@@ -4,7 +4,7 @@ import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getJson, sendJson, ApiError } from "@/lib/fetcher";
+import { getJson, sendJson, ApiError } from "@/frontend/lib/api-client";
 import {
   PageHead,
   Card,
@@ -22,10 +22,11 @@ import {
   num,
   when,
   pct,
-} from "@/components/admin/ui";
-import { EnterYardButton } from "@/components/admin/enter-yard-button";
-import { roleLabel } from "@/lib/role-label";
-import { RecordEditModal, type EditField, type EditableRecordKind } from "@/components/admin/record-edit";
+} from "@/frontend/components/admin/ui";
+import { EnterYardButton } from "@/frontend/components/admin/enter-yard-button";
+import { roleLabel } from "@/shared/role-label";
+import { assetUrl } from "@/shared/config/paths";
+import { RecordEditModal, type EditField, type EditableRecordKind } from "@/frontend/components/admin/record-edit";
 
 type Detail = {
   yard: {
@@ -667,8 +668,8 @@ export default function AdminYardDetailPage() {
                               <div className="aThumbs">
                                 {images.map((u) => (
                                   /* eslint-disable-next-line @next/next/no-img-element */
-                                  <a key={u} href={u} target="_blank" rel="noreferrer">
-                                    <img src={u} alt="Dispatch photo" />
+                                  <a key={u} href={assetUrl(u)} target="_blank" rel="noreferrer">
+                                    <img src={assetUrl(u)} alt="Dispatch photo" />
                                   </a>
                                 ))}
                               </div>

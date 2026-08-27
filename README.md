@@ -38,8 +38,8 @@ own "MS Bazar" or lot `A-115` independently.
 | Styling | Ported prototype CSS + Tailwind v4 · Poppins / JetBrains Mono |
 | Data | PostgreSQL (Neon) · Prisma ORM |
 | Auth | Auth.js v5 credentials · bcrypt · JWT carrying `role` + `yardId` |
-| Tenancy | Prisma Client Extension closing over `yardId` (`src/lib/tenant.ts`) |
-| Realtime | Server-Sent Events over an in-process bus (`src/lib/realtime.ts`) |
+| Tenancy | Prisma Client Extension closing over `yardId` (`src/backend/db/tenant.ts`) |
+| Realtime | Server-Sent Events over an in-process bus (`src/backend/realtime/realtime.ts`) |
 | State | TanStack Query · React context (XP/toast/celebration/realtime) |
 | Storage | Vercel Blob (prod) · local `/public/uploads` (dev), yard-partitioned |
 | ANPR/OCR | Python FastAPI · YOLOv8n + PaddleOCR (`/ocr-service`) |
@@ -77,7 +77,7 @@ written to `AuditLog` with before/after values.
 | Cross-yard analytics · audit log | ✅ | ❌ | ❌ |
 | See another yard's data | ✅ | 🚫 never | 🚫 never |
 
-The matrix lives in one place — `src/lib/permissions.ts` — and both the edge
+The matrix lives in one place — `src/shared/permissions.ts` — and both the edge
 middleware and the API guards derive from it, so they cannot drift apart.
 
 ---
@@ -145,7 +145,7 @@ prints the offending SQL instead of running it.
   as Inward. Capped by both the allocation balance and the physical stock.
 
 Inward, Sort and Outward all offer a **KG / TON / TONNE** selector. The unit is a
-display-and-entry concern only: `src/lib/units.ts` converts to kilograms before
+display-and-entry concern only: `src/shared/units.ts` converts to kilograms before
 anything reaches state, and **no ledger table ever stores a unit**.
 
 Every stock mutation writes an `InventoryTransaction` ledger row and runs inside
@@ -209,7 +209,7 @@ the console must stay light and the pages run under a strict CSP. The suite
 asserts that none of recharts/chart.js/d3/victory/nivo/apexcharts/echarts/
 plotly/highcharts is present.
 
-Primitives live in `src/components/admin/charts/` and are imported only through
+Primitives live in `src/frontend/components/admin/charts/` and are imported only through
 its `index.ts`, so internals can move without touching a dashboard:
 
 | Component | Used for |
@@ -256,7 +256,7 @@ bundle, since TanStack Query defines `refetchInterval` in its own code.
 ### Enter Yard (impersonation)
 
 An admin can open any active yard in that yard's own mobile UI. The acting yard
-lives in a signed, httpOnly cookie (`src/lib/impersonation.ts`) rather than the
+lives in a signed, httpOnly cookie (`src/backend/auth/impersonation.ts`) rather than the
 auth JWT, so it expires and can be revoked independently of the login session.
 Each session opens an `ImpersonationSession` row recording **admin, yard, start,
 exit, duration and end reason**, plus `impersonation.enter`/`.exit` audit entries.
@@ -268,7 +268,7 @@ admin's own session, and the cookie is httpOnly.
 
 ### What an admin may edit — and what nothing may edit
 
-`src/lib/admin-records.ts` whitelists editable fields per entity (vendor, buyer,
+`src/backend/services/admin-records.ts` whitelists editable fields per entity (vendor, buyer,
 material, sku, inwardLoad, sale, receivable). Descriptive and administrative
 fields are all editable, in any yard, fully audited.
 
@@ -298,7 +298,7 @@ the affected TanStack Query keys, so pages need no realtime code of their own.
 Events carry `actorId` so a client skips its own echo.
 
 **Swap point:** to move to Ably/Pusher/WebSockets, reimplement
-`src/lib/realtime.ts` + the two stream routes + the two providers. No business
+`src/backend/realtime/realtime.ts` + the two stream routes + the two providers. No business
 logic, route handler or component changes.
 
 ⚠️ The in-process bus assumes **one Node process**. Before running multiple
@@ -454,7 +454,7 @@ is read as single-material. This is used again in Phase 4 (`Sale.dispatchedKg ==
 null`). The rule it encodes: **no historical row is ever rewritten to fit a new
 feature** — the absence of data is itself the marker.
 
-**Units.** `src/lib/units.ts` holds the KG/TON/TONNE table and `toKilograms`.
+**Units.** `src/shared/units.ts` holds the KG/TON/TONNE table and `toKilograms`.
 Inward, Outward and Sort all import it. TON is the US short ton (907 kg), *not* the
 metric tonne (1000 kg) — conflating them would misreport every imported load by
 ~10%. Sort steps in the selected unit (±0.5 TONNE rather than ±50 kg), because
@@ -487,7 +487,7 @@ Load  →  OutwardLoad + lines       stock -= loaded, FIFO lots consumed
          dispatchStatus: PENDING → PARTIAL → COMPLETED
 ```
 
-`sellable = physical − reserved`. `src/lib/allocation.ts` is the shared vocabulary
+`sellable = physical − reserved`. `src/backend/services/allocation.ts` is the shared vocabulary
 (`remainingKg`, `dispatchStatusFor`, `reservedKg`, `sellableKg`, `validateDispatch`)
 and is pure, so the rule is testable without a database. **`dispatchStatus` is
 always derived from the quantities, never trusted from the stored column.**
@@ -517,7 +517,7 @@ showing each vehicle's allocations, evidence photos and audit history.
 ## Analytics and charts
 
 Everything is **hand-built inline SVG** — no chart library, no CDN, no runtime
-dependency. `src/components/admin/charts.tsx` provides `LineChart`, `BarChart`,
+dependency. `src/frontend/components/admin/charts.tsx` provides `LineChart`, `BarChart`,
 `GroupedBarChart`, `StackedBarChart`, `DonutChart`, `RankedBars`, `Legend` and
 `ChartCard`, plus `bucketBy` / `bucketLabel` for day/week/month granularity.
 
@@ -536,7 +536,7 @@ sale, because the same material exists as a separate row per yard — grouping o
 
 ## Upload security and rate limiting (Phase 5 Module 1)
 
-`src/lib/image-validate.ts`:
+`src/backend/storage/image-validate.ts`:
 
 - **size is checked arithmetically before decoding** — decoding first to measure
   the payload *is* the abuse;
@@ -548,7 +548,7 @@ sale, because the same material exists as a separate row per yard — grouping o
 - `storeImage` takes verified `Buffer` bytes plus a detected format, so an unverified
   data URL cannot reach storage.
 
-`src/lib/rate-limit.ts` is a fixed-window in-process limiter — the same
+`src/backend/http/rate-limit.ts` is a fixed-window in-process limiter — the same
 single-process assumption as the SSE bus. Auth deliberately has the **loosest**
 per-IP budget (60/min): a yard office behind one NAT address would otherwise lock
 itself out at shift change. Per-account lockout belongs in Auth.js `authorize()`
@@ -568,7 +568,7 @@ changes what every future run can produce. Deactivation is `Sku.visible = false`
 history and stock stay intact, the type simply stops being offered.
 
 Permanent delete follows the same rules as Materials, and they are **shared, not
-restated** — `src/lib/sku-references.ts` counts every table that can hold a `skuId`
+restated** — `src/backend/services/sku-references.ts` counts every table that can hold a `skuId`
 so a refusal can name what is holding the row. Adding a table that references `Sku`
 means adding it there; the count *is* the contract. (Extracting this found a real
 gap: the material path was not counting `OutwardLoadLine`, so a material whose SKU
@@ -605,7 +605,7 @@ exactly the situation where the existing number is already known to be wrong.
 
 ## What the record editor will not touch
 
-`src/lib/admin-records.ts` lets an admin correct clerical fields on any yard
+`src/backend/services/admin-records.ts` lets an admin correct clerical fields on any yard
 record — vendor, buyer, material, sku, inwardLoad, **outwardLoad**, sale,
 receivable. `LEDGER_FIELDS` are refused with `422 LEDGER_PROTECTED`: `totalKg`,
 `quantityKg`, `dispatchedKg`, `dispatchStatus`, `dispatchNumber`, `lotNumber`,
@@ -638,7 +638,7 @@ led to a working feature being reported as broken.
 
 ## OCR runs itself
 
-`npm run start` is the only command. `src/lib/ocr-supervisor.ts` (invoked from
+`npm run start` is the only command. `src/backend/ocr/ocr-supervisor.ts` (invoked from
 `src/instrumentation.ts`) spawns the Python ANPR service, health-checks it,
 restarts it on crash and reports its state to the admin dashboard. It adopts an
 already-listening service instead of spawning a rival, backs off up to 2 minutes
@@ -710,5 +710,6 @@ bank reconciliation, refurbishment, offline write-queue, compensating stock
 adjustments for quantity corrections, reserve-at-sale/finalize-at-dispatch
 inventory. The schema, permission matrix and realtime abstraction are built to
 extend into these without redesign.
-#   s c r a p - f l o w - v e l o c e  
+#   s c r a p - f l o w - v e l o c e 
+ 
  

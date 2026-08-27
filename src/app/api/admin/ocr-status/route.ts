@@ -1,5 +1,5 @@
-import { requireAdmin, ok } from "@/lib/api";
-import { ocrStatus } from "@/lib/ocr-supervisor";
+import { requireAdmin, ok } from "@/backend/http/api";
+import { ocrStatus } from "@/backend/ocr/ocr-supervisor";
 
 export const dynamic = "force-dynamic";
 

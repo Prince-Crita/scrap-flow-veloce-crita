@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
-import { requireAdmin, parseQuery, ok } from "@/lib/api";
-import { inYardScope, andYardScope } from "@/lib/active-yards";
+import { requireAdmin, parseQuery, ok } from "@/backend/http/api";
+import { inYardScope, andYardScope } from "@/backend/services/active-yards";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  * only user input is a day count validated to a small closed set.
  *
  * Days are bucketed in Asia/Kolkata so a sale booked at 11pm IST belongs to that
- * business day, not the next UTC one. This matches src/lib/streak.ts.
+ * business day, not the next UTC one. This matches src/backend/services/streak.ts.
  */
 
 const TZ = "Asia/Kolkata";

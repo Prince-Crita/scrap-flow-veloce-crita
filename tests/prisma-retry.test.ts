@@ -14,7 +14,7 @@
  * Usage: `npx tsx tests/prisma-retry.test.ts`
  */
 import { Prisma } from "@prisma/client";
-import { isDeadConnection, prisma } from "../src/lib/prisma";
+import { isDeadConnection, prisma } from "../src/backend/db/prisma";
 
 let pass = 0,
   fail = 0;

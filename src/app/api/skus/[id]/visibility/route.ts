@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { requireYardCapability, parseBody, ok, fail } from "@/lib/api";
-import { publish } from "@/lib/realtime";
+import { requireYardCapability, parseBody, ok, fail } from "@/backend/http/api";
+import { publish } from "@/backend/realtime/realtime";
 
 const schema = z.object({ visible: z.boolean() });
 

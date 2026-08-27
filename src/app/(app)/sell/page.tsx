@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getJson } from "@/lib/fetcher";
-import { fmt, fmtInr } from "@/lib/format";
-import { useUI } from "@/components/ui-provider";
-import { SellSheet, type ReadySku } from "@/components/sell-sheet";
-import { DispatchStatus } from "@/components/dispatch-status";
-import { useInvalidateChannels } from "@/components/realtime/provider";
+import { getJson } from "@/frontend/lib/api-client";
+import { fmt, fmtInr } from "@/shared/format";
+import { useUI } from "@/frontend/components/ui-provider";
+import { SellSheet, type ReadySku } from "@/frontend/components/sell-sheet";
+import { DispatchStatus } from "@/frontend/components/dispatch-status";
+import { useInvalidateChannels } from "@/frontend/components/realtime/provider";
 
 type ReadyResp = {
   ready: ReadySku[];

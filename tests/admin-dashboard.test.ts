@@ -10,7 +10,7 @@
  * ── Reference yard ───────────────────────────────────────────────────────────
  * It used to read Yard 1 (SFDY001) directly and assert that platform totals
  * equalled WHOLE-database totals. Neither holds any more: platform analytics now
- * count active yards only (src/lib/active-yards.ts), and the development yards
+ * count active yards only (src/backend/services/active-yards.ts), and the development yards
  * are archived. So the suite runs against the sandbox — `npm run test:dashboard`
  * restores the prototype baseline there first, which also reactivates it — and
  * every database expectation is scoped to the yards that are actually active.

@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getJson, sendJson, ApiError } from "@/lib/fetcher";
-import { PageHead, Card, Pill, Modal, Field, Empty, inr, kg, num, when } from "@/components/admin/ui";
-import { EnterYardButton } from "@/components/admin/enter-yard-button";
+import { getJson, sendJson, ApiError } from "@/frontend/lib/api-client";
+import { PageHead, Card, Pill, Modal, Field, Empty, inr, kg, num, when } from "@/frontend/components/admin/ui";
+import { EnterYardButton } from "@/frontend/components/admin/enter-yard-button";
 
 type YardRow = {
   id: string;

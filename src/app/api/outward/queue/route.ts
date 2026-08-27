@@ -1,5 +1,5 @@
-import { requireYard, ok } from "@/lib/api";
-import { dispatchStatusFor, remainingKg } from "@/lib/allocation";
+import { requireYard, ok } from "@/backend/http/api";
+import { dispatchStatusFor, remainingKg } from "@/backend/services/allocation";
 
 export const dynamic = "force-dynamic";
 

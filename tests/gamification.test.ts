@@ -20,7 +20,7 @@
  * Usage: start the app, then `npx tsx tests/gamification.test.ts`.
  */
 import { chromium, type Browser, type Page } from "playwright";
-import { levelProgress, levelForXp } from "../src/components/ui-provider";
+import { levelProgress, levelForXp } from "../src/frontend/components/ui-provider";
 
 const BASE = process.env.BASE_URL || "http://localhost:3001";
 

@@ -1,4 +1,4 @@
-import { requireOwnerYard, ok } from "@/lib/api";
+import { requireOwnerYard, ok } from "@/backend/http/api";
 
 export const dynamic = "force-dynamic";
 

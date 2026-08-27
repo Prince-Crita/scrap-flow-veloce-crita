@@ -20,8 +20,8 @@ import {
   MAX_IMAGE_BYTES,
   MIN_IMAGE_BYTES,
   MAX_DATA_URL_CHARS,
-} from "../src/lib/image-validate";
-import { rateLimit, __resetRateLimits, RATE_LIMITS } from "../src/lib/rate-limit";
+} from "../src/backend/storage/image-validate";
+import { rateLimit, __resetRateLimits, RATE_LIMITS } from "../src/backend/http/rate-limit";
 
 const prisma = new PrismaClient();
 const BASE = process.env.BASE_URL || "http://localhost:3001";

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { getJson } from "@/lib/fetcher";
+import { getJson } from "@/frontend/lib/api-client";
 import {
   PageHead,
   Kpi,
@@ -23,8 +23,8 @@ import {
   when,
   duration,
   pct,
-} from "@/components/admin/ui";
-import { DEFAULT_RANGE, type DateRange } from "@/components/admin/date-range";
+} from "@/frontend/components/admin/ui";
+import { DEFAULT_RANGE, type DateRange } from "@/frontend/components/admin/date-range";
 import {
   ChartCard,
   Sparkline,
@@ -34,7 +34,7 @@ import {
   RankedBars,
   SplitBar,
   colorAt,
-} from "@/components/admin/charts";
+} from "@/frontend/components/admin/charts";
 
 /**
  * Categorical order for the dashboard's own breakdowns.
@@ -65,7 +65,7 @@ const RANK_HUE = "#2E8B4F";
 
 /** Sorted vs unsorted, paid vs outstanding — the two-part splits. */
 const TONE = { good: "#6FE3A5", warn: "#F59E2B", quiet: "#4FA3D1", bad: "#FF6B5C" } as const;
-import { useAdminRealtime } from "@/components/admin/admin-realtime";
+import { useAdminRealtime } from "@/frontend/components/admin/admin-realtime";
 
 /* ────────────────────────────── types ────────────────────────────── */
 

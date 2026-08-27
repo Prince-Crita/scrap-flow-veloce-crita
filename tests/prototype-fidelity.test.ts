@@ -283,8 +283,8 @@ async function main() {
   }
 
   console.log("\n[XP bar] level 7, next target 2,000 XP, fill 62%");
-  // Mirrors src/components/ui-provider.tsx levelProgress().
-  const { levelForXp, levelProgress } = await import("../src/components/ui-provider");
+  // Mirrors src/frontend/components/ui-provider.tsx levelProgress().
+  const { levelForXp, levelProgress } = await import("../src/frontend/components/ui-provider");
   check("levelForXp(1240) = 7", levelForXp(1240) === 7, String(levelForXp(1240)));
   const prog = levelProgress(1240);
   check("next level target is 2000 XP", prog.nextXp === 2000, String(prog.nextXp));

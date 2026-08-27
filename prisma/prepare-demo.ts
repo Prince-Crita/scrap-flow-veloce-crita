@@ -5,8 +5,8 @@
  * the automated test sandbox). None of them may be deleted — this project treats
  * existing rows as a production baseline — so they are DEACTIVATED instead:
  * every row stays, `/admin/yards` still lists them, their users can no longer
- * sign in (src/auth.ts refuses a login whose yard is inactive), and platform
- * analytics exclude them (src/lib/active-yards.ts).
+ * sign in (src/backend/auth/auth.ts refuses a login whose yard is inactive), and platform
+ * analytics exclude them (src/backend/services/active-yards.ts).
  *
  * Then one fresh yard is created for client testing, provisioned exactly the way
  * the admin console provisions a yard (shared `provisionYard`), with an Owner and
@@ -19,7 +19,7 @@
  */
 import { PrismaClient, Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { provisionYard } from "../src/lib/yard-provisioning";
+import { provisionYard } from "../src/backend/services/yard-provisioning";
 
 const prisma = new PrismaClient();
 

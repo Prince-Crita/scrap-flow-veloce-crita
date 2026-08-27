@@ -1,28 +1,46 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
-import { authConfig } from "@/auth.config";
-import { blockedBy, homePathFor } from "@/lib/permissions";
-import { IMPERSONATION_COOKIE, verifyImpersonationToken } from "@/lib/impersonation";
-import { rateLimit, clientIp, tooManyRequests } from "@/lib/rate-limit";
-import { buildCsp, makeNonce, NONCE_HEADER, CSP_HEADER } from "@/lib/csp";
+import { authConfig } from "@/backend/auth/auth.config";
+import { blockedBy, homePathFor } from "@/shared/permissions";
+import { IMPERSONATION_COOKIE, verifyImpersonationToken } from "@/backend/auth/impersonation";
+import { rateLimit, clientIp, tooManyRequests } from "@/backend/http/rate-limit";
+import { buildCsp, makeNonce, NONCE_HEADER, CSP_HEADER } from "@/backend/http/csp";
+import { BASE_PATH } from "@/shared/config/paths";
 
 const { auth } = NextAuth(authConfig);
 
 /**
  * Edge routing guard. No database access — it decides purely from the signed
  * JWT plus the signed impersonation cookie. Data-level enforcement lives in the
- * API guards (src/lib/api.ts); this layer only keeps roles out of the wrong
- * *pages*, so the two must never disagree: both derive from src/lib/permissions.
+ * API guards (src/backend/http/api.ts); this layer only keeps roles out of the wrong
+ * *pages*, so the two must never disagree: both derive from src/shared/permissions.
  */
 export default auth(async (req) => {
   const { nextUrl } = req;
   const session = req.auth;
   const isLoggedIn = !!session;
   const role = session?.user?.role;
-  const path = nextUrl.pathname;
   const method = req.method;
 
+  /**
+   * App-relative path — the deployment prefix removed.
+   *
+   * Every rule below (`/login`, `/api/*`, the permission matrix) is written
+   * against the application's own routes, and `nextUrl.pathname` carries the
+   * deployment prefix when one is configured. Verified against a real prefixed
+   * build: without this, `path.startsWith("/api")` was false for an API request
+   * and the guard fell through to the page redirect instead of answering 401.
+   *
+   * Stripping here rather than at each comparison keeps every rule below
+   * unchanged, and is a no-op when no base path is set.
+   */
+  const path =
+    BASE_PATH && nextUrl.pathname.startsWith(BASE_PATH)
+      ? nextUrl.pathname.slice(BASE_PATH.length) || "/"
+      : nextUrl.pathname;
+
   const isLogin = path === "/login";
+
   const isAuthApi = path.startsWith("/api/auth");
   /**
    * Icons and the manifest must be reachable WITHOUT a session.
@@ -45,7 +63,7 @@ export default auth(async (req) => {
   /**
    * Tells the root layout which shell to render. The admin console needs
    * `data-shell="admin"` on <body> — that attribute is what activates
-   * src/styles/admin.css — and <body> lives in the root layout, which cannot
+   * src/frontend/styles/admin.css — and <body> lives in the root layout, which cannot
    * otherwise know the route. Passing it as a request header makes the attribute
    * server-rendered: no flash of the phone-centred layout on first paint, and
    * the correct shell even with JavaScript disabled.
@@ -76,6 +94,26 @@ export default auth(async (req) => {
   const pass = () => withCsp(NextResponse.next({ request: { headers: shellHeaders } }));
 
   /**
+   * Build an in-app redirect target that survives a deployment base path.
+   *
+   * A middleware redirect is a raw `Location` header — Next.js does not add the
+   * deployment prefix to it, and `new URL("/login", nextUrl)` actively removes
+   * one, because a root-relative path replaces the whole path of the base URL.
+   * Either way the browser lands outside the application. The prefix is
+   * therefore applied explicitly, which is exactly what a prefixed build showed
+   * to be necessary.
+   *
+   * Byte-for-byte the previous behaviour when no base path is configured.
+   */
+  const to = (pathname: string, params?: Record<string, string>) => {
+    const url = nextUrl.clone();
+    url.pathname = `${BASE_PATH}${pathname}`;
+    url.search = "";
+    for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v);
+    return url;
+  };
+
+  /**
    * Credential-stuffing defence. Keyed on IP rather than on the submitted
    * email, or an attacker would simply rotate addresses to get a fresh budget
    * for each account they try.
@@ -99,9 +137,7 @@ export default auth(async (req) => {
     if (path.startsWith("/api")) {
       return withCsp(NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Login required" } }, { status: 401 }));
     }
-    const url = new URL("/login", nextUrl);
-    url.searchParams.set("callbackUrl", path);
-    return withCsp(NextResponse.redirect(url));
+    return withCsp(NextResponse.redirect(to("/login", { callbackUrl: path })));
   }
 
   if (!role) return pass();
@@ -117,14 +153,14 @@ export default auth(async (req) => {
         { status: 403 }
       ));
     }
-    return withCsp(NextResponse.redirect(new URL("/change-password", nextUrl)));
+    return withCsp(NextResponse.redirect(to("/change-password")));
   }
   if (!mustChange && path === "/change-password") {
-    return withCsp(NextResponse.redirect(new URL(homePathFor(role), nextUrl)));
+    return withCsp(NextResponse.redirect(to(homePathFor(role))));
   }
 
   // Logged in but on /login → send to the role's home
-  if (isLogin) return withCsp(NextResponse.redirect(new URL(homePathFor(role), nextUrl)));
+  if (isLogin) return withCsp(NextResponse.redirect(to(homePathFor(role))));
 
   // An ADMIN reaches the yard (phone) UI only inside an active Enter Yard
   // session. Without one there is no yard to scope those screens to, so send
@@ -133,7 +169,7 @@ export default auth(async (req) => {
   if (role === "ADMIN" && YARD_UI_PREFIXES.some((p) => path.startsWith(p))) {
     const claims = await verifyImpersonationToken(req.cookies.get(IMPERSONATION_COOKIE)?.value);
     if (!claims || claims.adminId !== session!.user!.id) {
-      return withCsp(NextResponse.redirect(new URL("/admin/yards", nextUrl)));
+      return withCsp(NextResponse.redirect(to("/admin/yards")));
     }
   }
 
@@ -146,7 +182,7 @@ export default auth(async (req) => {
         { status: 403 }
       ));
     }
-    return withCsp(NextResponse.redirect(new URL(homePathFor(role), nextUrl)));
+    return withCsp(NextResponse.redirect(to(homePathFor(role))));
   }
 
   return pass();

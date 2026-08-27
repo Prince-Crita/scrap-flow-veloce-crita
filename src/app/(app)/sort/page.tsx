@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
-import { getJson, sendJson, ApiError } from "@/lib/fetcher";
-import { useInvalidateChannels } from "@/components/realtime/provider";
-import { fmt } from "@/lib/format";
-import { UNITS, fromKilograms, toKilograms, type UnitCode } from "@/lib/units";
-import { useUI } from "@/components/ui-provider";
-import { SortTypeSheet } from "@/components/sort-type-sheet";
-import { can } from "@/lib/permissions";
+import { getJson, sendJson, ApiError } from "@/frontend/lib/api-client";
+import { useInvalidateChannels } from "@/frontend/components/realtime/provider";
+import { fmt } from "@/shared/format";
+import { UNITS, fromKilograms, toKilograms, type UnitCode } from "@/shared/units";
+import { useUI } from "@/frontend/components/ui-provider";
+import { SortTypeSheet } from "@/frontend/components/sort-type-sheet";
+import { can } from "@/shared/permissions";
+import { roleLabel } from "@/shared/role-label";
+import { loadRefDate } from "@/shared/load-ref";
 
 type Lot = {
   /** Row identity. A multi-material load contributes several rows sharing one
@@ -18,6 +20,8 @@ type Lot = {
   loadId: string;
   lineId: string | null;
   lotNumber: string;
+  /** Platform-unique, human-readable — see src/shared/load-ref.ts. */
+  loadRef: string;
   materialLabel: string;
   /** The unsorted balance still to allocate — not necessarily what arrived. */
   totalKg: number;
@@ -25,11 +29,117 @@ type Lot = {
   sortedKg?: number;
   vendorName: string;
   vehicleNumber: string;
+  capturedByName: string | null;
+  capturedByRole: string | null;
   createdAt: string;
   sourceSkuId: string | null;
   targets: { skuId: string; name: string }[];
   sortable: boolean;
 };
+
+/**
+ * Who received the load, for the selector.
+ *
+ * The person's name when there is one, because a name identifies the human and
+ * a role does not — two supervisors are not interchangeable. Falls back to the
+ * role label ("Owner", "Supervisor") for accounts with no display name, which is
+ * the same vocabulary the rest of the app uses. The lot card below shows both.
+ */
+function enteredBy(l: Pick<Lot, "capturedByName" | "capturedByRole">): string {
+  if (l.capturedByName) return l.capturedByName;
+  return l.capturedByRole ? roleLabel(l.capturedByRole) : "—";
+}
+
+/** The one line that identifies a load. Unchanged — see the selector below. */
+function lotLabel(l: Lot): string {
+  return `${l.loadRef} / ${l.materialLabel} / ${l.vehicleNumber} / ${enteredBy(l)} / ${loadRefDate(l.createdAt)}`;
+}
+
+/**
+ * The load selector.
+ *
+ * This was a native `<select>`, and a native select's popup is drawn by the
+ * BROWSER, outside the document. Its width is set by the longest `<option>` and
+ * no stylesheet can reach it — which is why a load line like
+ * "TY1-0005 / PET Mixed / TN74AR7146 / Testing Yard Supervisor / 24 Aug 2026"
+ * pushed the menu off the right edge of a 390px screen, and why no amount of
+ * CSS on the `<option>` could wrap it: option text cannot wrap, ever.
+ *
+ * So the list is rendered IN the page instead, where it can be bounded. The
+ * closed control keeps the exact `.field select` treatment it always had — same
+ * panel, border, radius, padding, font and focus colour — and the menu is pinned
+ * to that control's own left and right edges, so it is physically incapable of
+ * being wider than the field. Every option still carries all five parts of the
+ * label; they wrap instead of widening.
+ */
+function LoadSelect({
+  lots,
+  value,
+  onChange,
+}: {
+  lots: Lot[];
+  value: string;
+  onChange: (lotKey: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = lots.find((l) => l.lotKey === value) ?? null;
+
+  // Close on an outside tap or Escape — what a native select does for free.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="selectWrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="selectCtl"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Select load"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {/* One line, ellipsised: the closed field must not grow either. */}
+        <span className="selectCtlVal">{selected ? lotLabel(selected) : "Select load"}</span>
+        <span className="selectCaret" aria-hidden>
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <ul className="selectMenu" role="listbox" aria-label="Select load">
+          {lots.map((l) => (
+            <li
+              key={l.lotKey}
+              role="option"
+              aria-selected={l.lotKey === value}
+              className={`selectOpt${l.lotKey === value ? " on" : ""}`}
+              onClick={() => {
+                onChange(l.lotKey);
+                setOpen(false);
+              }}
+            >
+              {lotLabel(l)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 /** Compact per-row unit selector. Same shared UNITS table everywhere. */
 function UnitSelect({
@@ -385,20 +495,22 @@ export default function SortPage() {
     <>
       <div className="secTitle">Segregation Run</div>
 
+      {/*
+        The load, identified by what actually distinguishes it.
+
+        "Walk-in — TN99X4429 — Mixed MS" could name two different loads on the
+        same day, in the same yard, and said nothing at all across yards. The
+        reference leads instead, and the material, vehicle, receiver and date
+        follow it — enough to recognise a load without opening it.
+      */}
       <div className="field">
-        <label>Select vendor lot / vehicle</label>
-        <select value={lot.lotKey} onChange={(e) => setSelectedLotKey(e.target.value)}>
-          {lots.map((l) => (
-            <option key={l.lotKey} value={l.lotKey}>
-              {l.vendorName} — {l.vehicleNumber} — {l.materialLabel} — {show(l.totalKg)} {suffix}
-            </option>
-          ))}
-        </select>
+        <label>Select load</label>
+        <LoadSelect lots={lots} value={lot.lotKey} onChange={setSelectedLotKey} />
       </div>
 
       <div className="lot">
         <h3>
-          {lot.materialLabel} · Lot #{lot.lotNumber}
+          {lot.materialLabel} · {lot.loadRef}
         </h3>
         <div className="big">
           {show(lot.totalKg)} {suffix}
@@ -409,8 +521,14 @@ export default function SortPage() {
             {suffix} already sorted
           </small>
         )}
-        <small style={{ fontFamily: "var(--mono)", color: "var(--muted)" }}>
+        <small style={{ fontFamily: "var(--mono)", color: "var(--muted)", display: "block" }}>
           {lot.vendorName} · 🚚 {lot.vehicleNumber} · {when}
+        </small>
+        {/* Both the person and the role here, where there is room for them —
+            the selector above only has space for one. */}
+        <small style={{ fontFamily: "var(--mono)", color: "var(--muted)" }}>
+          Lot #{lot.lotNumber} · entered by {enteredBy(lot)}
+          {lot.capturedByName && lot.capturedByRole ? ` · ${roleLabel(lot.capturedByRole)}` : ""}
         </small>
       </div>
 

@@ -13,14 +13,14 @@ export async function register() {
   try {
     // Eagerly, not lazily: an instance that only receives events would otherwise
     // never open its LISTEN connection and would miss every remote event.
-    const { initRealtime } = await import("@/lib/realtime");
+    const { initRealtime } = await import("@/backend/realtime/realtime");
     initRealtime();
   } catch (e) {
     console.error("[startup] realtime transport could not be started:", e);
   }
 
   try {
-    const { startOcrSupervisor } = await import("@/lib/ocr-supervisor");
+    const { startOcrSupervisor } = await import("@/backend/ocr/ocr-supervisor");
     startOcrSupervisor();
   } catch (e) {
     // Deliberately swallowed. If supervision cannot even be set up, the OCR

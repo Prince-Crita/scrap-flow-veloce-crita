@@ -1,5 +1,5 @@
-import { requireYard, ok } from "@/lib/api";
-import { busStats } from "@/lib/realtime";
+import { requireYard, ok } from "@/backend/http/api";
+import { busStats } from "@/backend/realtime/realtime";
 
 export const dynamic = "force-dynamic";
 

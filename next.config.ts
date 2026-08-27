@@ -1,14 +1,39 @@
 import type { NextConfig } from "next";
 
+/**
+ * Deployment shape — the only place these are decided.
+ *
+ * `NEXT_PUBLIC_BASE_PATH`
+ *   The prefix the app is served under on the company server, e.g.
+ *   `/client-trial/veloceinventory`. UNSET everywhere today, which is what keeps
+ *   `http://localhost:3001/` and the current Vercel deployment working with no
+ *   configuration. When the company supplies the real prefix it is set here via
+ *   the environment and nothing else in the codebase changes — the same variable
+ *   is read by `src/shared/config/paths.ts` for the calls Next does not prefix
+ *   itself (fetch, EventSource, stored image URLs).
+ *
+ *   It must be `NEXT_PUBLIC_` because the browser bundle needs the same value;
+ *   `basePath` is compiled in at build time, so this is a build/deploy input,
+ *   not a runtime one.
+ *
+ * `NEXT_OUTPUT_STANDALONE`
+ *   `1` emits `.next/standalone` — a self-contained Node server for the company
+ *   box. Off by default so the Vercel build is byte-for-byte what it is today.
+ */
+const basePath = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/$/, "");
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+
+  ...(basePath ? { basePath, assetPrefix: basePath } : {}),
+  ...(process.env.NEXT_OUTPUT_STANDALONE === "1" ? { output: "standalone" as const } : {}),
   experimental: {
     // Allow larger payloads for base64 image proxying to the OCR service.
     serverActions: { bodySizeLimit: "8mb" },
   },
 
   /**
-   * `src/lib/ocr-supervisor.ts` resolves the OCR sidecar's path with
+   * `src/backend/ocr/ocr-supervisor.ts` resolves the OCR sidecar's path with
    * `join(process.cwd(), "ocr-service")`, which Turbopack's output file tracer
    * cannot statically resolve. Its fallback for an unresolvable path is to sweep
    * the whole project into every route that imports the module — verified by

@@ -1,5 +1,5 @@
-import { requireAdmin, ok } from "@/lib/api";
-import { inLiveYards, liveYardUsers } from "@/lib/active-yards";
+import { requireAdmin, ok } from "@/backend/http/api";
+import { inLiveYards, liveYardUsers } from "@/backend/services/active-yards";
 
 export const dynamic = "force-dynamic";
 

@@ -62,9 +62,9 @@
 | Database | Prisma + Neon PostgreSQL (`Veloce_Scrap_Flow`), pooled URL only, no `DIRECT_URL` |
 | Auth | Auth.js v5 credentials; JWT carries `role` + `yardId` |
 | Roles | ADMIN (platform, desktop console) · OWNER · MANAGER (yard, phone UI) |
-| Tenancy | Closure-scoped Prisma Client extension, `src/lib/tenant.ts`, fail-closed |
-| Permissions | One home: `src/lib/permissions.ts` — consumed by middleware **and** API guards |
-| Realtime | SSE over in-process pub/sub (`src/lib/realtime.ts`), behind `useYardChannel` |
+| Tenancy | Closure-scoped Prisma Client extension, `src/backend/db/tenant.ts`, fail-closed |
+| Permissions | One home: `src/shared/permissions.ts` — consumed by middleware **and** API guards |
+| Realtime | SSE over in-process pub/sub (`src/backend/realtime/realtime.ts`), behind `useYardChannel` |
 | OCR / ANPR | FastAPI service in `/ocr-service` |
 | Admin shell | `body[data-shell="admin"]`, server-rendered from `x-sf-shell` middleware header |
 | Uploads | Yard-partitioned: `uploads/{yardId}/…` |
@@ -127,10 +127,10 @@
 - Nullable `clientRequestId` + `@@unique([yardId, clientRequestId])` on `InwardLoad` and `Sale`
 - Replayed SAVE LOAD / sale returns the original lot/invoice with `replayed:true` at HTTP 200 — no double-counted stock, no burnt invoice number; concurrent race caught by the unique index (P2002 → return the winner)
 - Clients hold one key across retries (`newRequestId()` in `fetcher.ts`, `useRef` in inward page + sell sheet); omitting the key preserves old behaviour
-- `src/lib/streak.ts` — pure, timezone-aware (Asia/Kolkata): +1 consecutive day, unchanged same-day, reset on gap; ADMIN accrues nothing
+- `src/backend/services/streak.ts` — pure, timezone-aware (Asia/Kolkata): +1 consecutive day, unchanged same-day, reset on gap; ADMIN accrues nothing
 
 ### Phase 2A — Admin dashboard IA (2026-07-25)
-- `src/components/admin/ui.tsx` primitives: `Skeleton`/`SkeletonKpis`/`SkeletonRows`, `EmptyState`, `SubNav`, `Stat`/`StatList`, `AlertRow`/`AlertList`, `ChartPlaceholder`, `Crumbs`, `pct` (original `Empty` left untouched for compatibility)
+- `src/frontend/components/admin/ui.tsx` primitives: `Skeleton`/`SkeletonKpis`/`SkeletonRows`, `EmptyState`, `SubNav`, `Stat`/`StatList`, `AlertRow`/`AlertList`, `ChartPlaceholder`, `Crumbs`, `pct` (original `Empty` left untouched for compatibility)
 - `/api/admin/dashboard` — KPIs, yard/stock/vendor/material/sell/ops summaries, server-computed alerts + pending actions, recent activity. Grouped aggregates only (O(1) round trips)
 - `/api/admin/analytics?days=7|30|90&yardId=` — raw SQL `date_trunc` bucketed in Asia/Kolkata, zero-filled per day
 - Rebuilt `/admin`; new `/admin/analytics` (Overview / Yard comparison / Materials / Vendors)
@@ -138,7 +138,7 @@
 - Fixed a real pre-existing bug: audit rows mapped to a keyless `<>` fragment → keyed `<Fragment>`
 
 ### Phase 2B — Inline-SVG charts (2026-07-26)
-- `src/components/admin/charts/scale.ts` — pure geometry, no React/DOM: `niceMax` (1/2/5 ladder), `ticks`, `compact` (k/L/Cr), `yScale`, `bandCentres`/`bandWidth`, `linePath`/`areaPath`, `arc`, `pieArcs`, `weekKey`/`monthKey`/`bucketBy`, `PALETTE`
+- `src/frontend/components/admin/charts/scale.ts` — pure geometry, no React/DOM: `niceMax` (1/2/5 ladder), `ticks`, `compact` (k/L/Cr), `yScale`, `bandCentres`/`bandWidth`, `linePath`/`areaPath`, `arc`, `pieArcs`, `weekKey`/`monthKey`/`bucketBy`, `PALETTE`
 - `primitives.tsx` — Line / Bar / GroupedBar / StackedBar / Pie / Donut / Sparkline / RankedBars + `ChartCard`, `Legend`, `Tooltip`, `EmptyChartState`, `LoadingChartState`
 - `index.ts` is the only public import path
 - All 10 reserved `data-chart` regions render real charts; dashboard gets a 30-day `DashboardTrends` sparkline strip
@@ -161,7 +161,7 @@
 
 **B · Unit selector (KG / TON / TONNE).** The LED's static `KG` became a `<select>` styled to look identical. Conversion happens in `toKilograms()` in the UI layer; the cart stores kilograms and the API only ever receives kilograms. Factors: KG 1, TON 907 (US short), TONNE 1000. **No unit column exists on any ledger table** — asserted.
 
-**C · Recent Load Details.** New read-only `GET /api/inward/recent` (cap 8) + `src/components/recent-loads.tsx`. Shows vendor, vehicle + type, driver, per-material weights, slip link, timestamp. No polling — the realtime provider now invalidates `["recentLoads"]` on the `inward` channel.
+**C · Recent Load Details.** New read-only `GET /api/inward/recent` (cap 8) + `src/frontend/components/recent-loads.tsx`. Shows vendor, vehicle + type, driver, per-material weights, slip link, timestamp. No polling — the realtime provider now invalidates `["recentLoads"]` on the `inward` channel.
 
 **Weighbridge slip is now real.** Was a stub toast; now uploads via `/api/uploads` (new `weighbridge-slip` kind) and stores `InwardLoad.weighbridgeSlipUrl`. Evidence only — the authoritative weight is always the sum of the lines.
 
@@ -192,7 +192,7 @@ AND classical blackhat morphology, pooled, best-first, full frame last resort)
 **Header appearance unchanged.**
 
 - **Level ring was broken:** `strokeDasharray="120" strokeDashoffset="45"` were hardcoded, so it drew the same arc at every XP total. Now `dasharray = 2πr` and `dashoffset = C × (1 − pct/100)`, with a `stroke-dashoffset` transition so XP awards animate. Honours `prefers-reduced-motion`.
-- **Level badge no longer signs out.** It opens `src/components/profile-sheet.tsx`: name, role, yard, yard code, owner, level, XP, XP to next level, animated bar, streak, achievements placeholder, and a Sign Out button. **Only Sign Out ends the session**, and it still confirms first.
+- **Level badge no longer signs out.** It opens `src/frontend/components/profile-sheet.tsx`: name, role, yard, yard code, owner, level, XP, XP to next level, animated bar, streak, achievements placeholder, and a Sign Out button. **Only Sign Out ends the session**, and it still confirms first.
 - `Yard.ownerName` is unset for Yard 1, so the owner falls back to the yard's actual OWNER user — derived from real data, never invented.
 - **Streak verified unchanged** — `test:idempotency` (45) still green.
 
@@ -204,7 +204,7 @@ AND classical blackhat morphology, pooled, best-first, full frame last resort)
 
 **The legacy rule:** `Sale.dispatchedKg === null` marks a sale created before Outward existed — its stock was deducted at sale time, so it reads as COMPLETED and never enters the outward queue. **No historical row was rewritten** (same technique as inward line items). Yard 1's two demo sales are untouched and display correctly as COMPLETED.
 
-**`src/lib/allocation.ts`** — the shared vocabulary, pure and fully tested: `remainingKg`, `dispatchStatusFor` (derived from the quantities, never trusted from the stored column), `reservedKg`, `sellableKg`, `validateDispatch`.
+**`src/backend/services/allocation.ts`** — the shared vocabulary, pure and fully tested: `remainingKg`, `dispatchStatusFor` (derived from the quantities, never trusted from the stored column), `reservedKg`, `sellableKg`, `validateDispatch`.
 
 - **Selling the same kilograms twice is refused.** Availability = physical − outstanding allocations.
 - **Over-dispatch is refused twice** — capped in the keypad UI and re-checked server-side, so two phones cannot race past an allocation.
@@ -226,13 +226,13 @@ AND classical blackhat morphology, pooled, best-first, full frame last resort)
 
 **Closed the one real bug from the audit.** `/api/uploads` previously accepted any string starting `data:image/` — no length limit, no proof the bytes were an image — base64-decoded it into a Buffer, and took the stored file extension from the client's own MIME declaration.
 
-**`src/lib/image-validate.ts`** (pure, no server needed to test):
+**`src/backend/storage/image-validate.ts`** (pure, no server needed to test):
 - Size is checked **before decoding**, arithmetically via `base64ByteLength`. Decoding first to measure would *be* the abuse. Two gates: 12M chars at the zod schema, 8 MB decoded.
 - Stray non-base64 characters are rejected before decoding — `Buffer.from` silently skips them, which would let a payload smuggle bytes past the size arithmetic.
 - **File-signature detection** for JPEG / PNG / WebP / GIF / BMP. The client MIME type is never used for any decision. Storage accepts verified `Buffer` + detected format, never a data URL, so the extension cannot be attacker-controlled.
 - GIF and BMP are detected but refused; **SVG is refused outright** (it can carry script).
 
-**`src/lib/rate-limit.ts`** — fixed-window counters, per endpoint class: upload 60/min and OCR 20/min keyed on **user id** (an authenticated caller cannot dodge by changing IP); auth 60/min keyed on **IP**, in the middleware, scoped to `POST /api/auth/callback/credentials`. Returns 429 with `Retry-After` and `X-RateLimit-*`.
+**`src/backend/http/rate-limit.ts`** — fixed-window counters, per endpoint class: upload 60/min and OCR 20/min keyed on **user id** (an authenticated caller cannot dodge by changing IP); auth 60/min keyed on **IP**, in the middleware, scoped to `POST /api/auth/callback/credentials`. Returns 429 with `Retry-After` and `X-RateLimit-*`.
 
 **A flaw found during verification and fixed:** the auth limit started at 10/min per IP and broke the test suite's logins. That surfaced the real problem — a yard office behind one NAT address would be locked out at shift change, a worse failure than the brute force being prevented. Raised to 60/min; a per-**account** lockout belongs in Auth.js `authorize()` and is recorded as follow-on work.
 
@@ -244,11 +244,11 @@ Strictly additive; no existing query, field or layout touched. **Dashboard:** se
 
 ### Phase 5 · Module 3 — Sorting unit selector (2026-07-26)
 
-KG/TON/TONNE on Sort, from the same `src/lib/units.ts` that Inward and Outward now share (the table had been duplicated in both). Sort steps in the **selected unit** — ±0.5 TONNE rather than ±50 kg — because a 20-tonne lot cannot be nudged 50 kg at a time; KG remains the default because a coarse step cannot always land exactly on zero remaining. State stays in kilograms; switching units re-renders and never rewrites, so a unit change cannot alter what is written. **No schema change.**
+KG/TON/TONNE on Sort, from the same `src/shared/units.ts` that Inward and Outward now share (the table had been duplicated in both). Sort steps in the **selected unit** — ±0.5 TONNE rather than ±50 kg — because a 20-tonne lot cannot be nudged 50 kg at a time; KG remains the default because a coarse step cannot always land exactly on zero remaining. State stays in kilograms; switching units re-renders and never rewrites, so a unit change cannot alter what is written. **No schema change.**
 
 ### Phase 5 · Module 4 — Sort-type management (2026-07-26)
 
-`/api/sort-types` (+`/[id]`): create, rename, deactivate, restore, permanent delete. Owner and Admin full CRUD; **Manager read-only** — changing the sort tree changes what every future run can produce. A sort type IS a non-mixed `Sku` under a `Material`; there is no separate table, because a second tree would mean reconciling every finished kilogram across both. `visible` is the active flag, so deactivation keeps all history and stock. Zero-reference delete rules are **shared** with Materials in `src/lib/sku-references.ts`; extracting them closed a real gap — `OutwardLoadLine` was not being counted, so a material whose SKU had been dispatched could previously be erased. UI is `SortTypeSheet`, mirroring `MaterialSheet`.
+`/api/sort-types` (+`/[id]`): create, rename, deactivate, restore, permanent delete. Owner and Admin full CRUD; **Manager read-only** — changing the sort tree changes what every future run can produce. A sort type IS a non-mixed `Sku` under a `Material`; there is no separate table, because a second tree would mean reconciling every finished kilogram across both. `visible` is the active flag, so deactivation keeps all history and stock. Zero-reference delete rules are **shared** with Materials in `src/backend/services/sku-references.ts`; extracting them closed a real gap — `OutwardLoadLine` was not being counted, so a material whose SKU had been dispatched could previously be erased. UI is `SortTypeSheet`, mirroring `MaterialSheet`.
 
 ### Phase 5 · Module 5 — Stock adjustment (2026-07-26)
 
@@ -274,7 +274,7 @@ KG/TON/TONNE on Sort, from the same `src/lib/units.ts` that Inward and Outward n
 - **An allocation can never be over-dispatched.** Validated in the UI and re-validated server-side; a multi-line dispatch is all-or-nothing.
 - **Dispatch consumes batches FIFO**, so vendor attribution survives the sale.
 - **Dispatch is the Manager's job.** The Owner sells and watches; the Owner has no outward queue.
-- **Ledger-derived quantities are not editable in place.** `src/lib/admin-records.ts` refuses `totalKg`, `quantityKg`, `ratePerKg`, `total`, `remainingKg`, `lotNumber`, `invoiceNumber`, `yardId` — editing one desynchronises `Inventory` totals, `InventoryLot` remainders and `InventoryTransaction` history. Correcting a quantity requires a **compensating stock-adjustment transaction with its own TxnType — not yet built**.
+- **Ledger-derived quantities are not editable in place.** `src/backend/services/admin-records.ts` refuses `totalKg`, `quantityKg`, `ratePerKg`, `total`, `remainingKg`, `lotNumber`, `invoiceNumber`, `yardId` — editing one desynchronises `Inventory` totals, `InventoryLot` remainders and `InventoryTransaction` history. Correcting a quantity requires a **compensating stock-adjustment transaction with its own TxnType — not yet built**.
 - **Impersonation is invisible to the yard.** Owner and Manager must never be able to tell whether Admin is currently viewing.
 - Level curve `[0,100,250,450,700,950,1200,2000]`; XP bar percentage is absolute (`xp/nextXp`).
 - Streak evaluated in the **yard's** timezone (Asia/Kolkata), not UTC and not server-local.
@@ -350,7 +350,7 @@ Phases 3, 4 and 5 are **complete** (see §4 and the Changelog). What remains is 
 
 | # | Item | Notes |
 |---|---|---|
-| — | **Shared store for rate limiting + SSE** | The real blocker to deploying: both are per-process, so neither survives a second instance. Swap points are documented in `src/lib/realtime.ts` and `src/lib/rate-limit.ts`. |
+| — | **Shared store for rate limiting + SSE** | The real blocker to deploying: both are per-process, so neither survives a second instance. Swap points are documented in `src/backend/realtime/realtime.ts` and `src/backend/http/rate-limit.ts`. |
 | — | **Per-account auth lockout** | Only per-IP exists. Belongs in Auth.js `authorize()`. |
 | — | **Migration baseline** | Needs `DIRECT_URL` (unpooled Neon). `db:push` has carried every schema change so far. |
 | — | Remaining gamification | Achievements are still a placeholder in the profile popup. |
@@ -374,7 +374,7 @@ Phases 3, 4 and 5 are **complete** (see §4 and the Changelog). What remains is 
    across 10 minutes, with **zero** `kind: Closed` errors.
 
    **Cause found in the following session, and it was NOT `connection_limit`.**
-   `src/lib/realtime-pg.ts` scheduled a reconnect from **both** the `error` and the
+   `src/backend/realtime/realtime-pg.ts` scheduled a reconnect from **both** the `error` and the
    `end` event, and pg emits both on every drop. Each drop therefore queued two
    reconnects; each replacement client did the same on its next failure; the
    generations doubled. That single defect produced all of it — the stale-connection
@@ -415,7 +415,7 @@ Phases 3, 4 and 5 are **complete** (see §4 and the Changelog). What remains is 
 3. ~~"Permanent delete" conflicts with `Restrict` FKs.~~ **Resolved 2026-07-26** (Module 1D) — reference counts are checked in the handler so the operator gets an explanation, not a constraint violation.
 4. **OCR accuracy is bounded by the deployed model.** Preprocessing and retry raise the hit rate; "never fails" is not achievable. The tiered manual fallback must stay.
 5. ~~Quantity corrections and Phase 4 both depend on the missing compensating stock-adjustment transaction.~~ **Resolved 2026-07-26** (Phase 5 M5) — `POST /api/admin/stock-adjustment` reconciles `Inventory` and `InventoryLot` in one transaction and writes a `STOCK_ADJUSTMENT` ledger row. Residual risk: it is admin-only and has no Owner-facing path, so a yard cannot correct its own drift without the platform team.
-5a. **A tenant guard was defeatable by a projection** until 2026-07-26 — `findUnique` post-filtered on `res.yardId`, which any `select` could omit. Fixed in `src/lib/tenant.ts`. Residual risk: the same class of bug applies to any future post-filter, so scope checks should read a column the query is forced to return.
+5a. **A tenant guard was defeatable by a projection** until 2026-07-26 — `findUnique` post-filtered on `res.yardId`, which any `select` could omit. Fixed in `src/backend/db/tenant.ts`. Residual risk: the same class of bug applies to any future post-filter, so scope checks should read a column the query is forced to return.
 6. **The in-process SSE bus assumes a single Node process.** A real broker is required before multi-instance. Swap point is documented.
 7. **No `prisma/migrations` baseline** (needs `DIRECT_URL`, unpooled Neon). Must exist before production.
 8. **`vercel.json` still runs `prisma db push` at build time** — must change before any deploy.
@@ -435,7 +435,7 @@ Phases 3, 4 and 5 are **complete** (see §4 and the Changelog). What remains is 
 The app now sends `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
 `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`
 (`camera=(self)` — the weighbridge needs the camera) and HSTS, on every route.
-**A nonce-based CSP is now live** (`src/lib/csp.ts` + middleware), verified in a
+**A nonce-based CSP is now live** (`src/backend/http/csp.ts` + middleware), verified in a
 real browser with **zero violations** across three roles and 13 pages
 (`test:csp`, 47 assertions). `script-src` is nonce + `'strict-dynamic'` with no
 `unsafe-inline` and no `unsafe-eval` in production.
@@ -606,7 +606,7 @@ Fixed during pre-flight: **`test:all` was silently skipping four suites.** `test
 
 ### ✅ MULTI-INSTANCE REALTIME — DONE 2026-07-26. The deployment blocker is gone.
 
-`src/lib/realtime-pg.ts` adds **Postgres LISTEN/NOTIFY** as a cross-instance
+`src/backend/realtime/realtime-pg.ts` adds **Postgres LISTEN/NOTIFY** as a cross-instance
 transport behind the unchanged `publish()` / `subscribeYard()` interface. No new
 vendor, no second database, no polling.
 
@@ -639,7 +639,7 @@ vendor, no second database, no polling.
 
 ### ✅ SHARED RATE LIMITING — DONE 2026-07-26
 
-`rateLimitShared()` in `src/lib/rate-limit.ts`: atomic upsert on
+`rateLimitShared()` in `src/backend/http/rate-limit.ts`: atomic upsert on
 `RateLimitCounter(bucket, windowStart)`, so upload and OCR budgets are now shared
 across instances instead of `configured × instances`. Two call sites
 (`/api/uploads`, `/api/ocr`) awaited. **Fails open** — a database blip must not stop
@@ -713,7 +713,7 @@ Measured, not guessed. Baseline → after (median of 5 warm HTTP requests, real 
 2. **`PrismaClient` was pinned on `globalThis` in development only.** In production
    a second module evaluation builds a second client with its own pool — duplicate
    pools competing for the same PgBouncer slots, and a cold pool paying TLS on
-   first use. Now pinned in every environment (`src/lib/prisma.ts`). Fourth
+   first use. Now pinned in every environment (`src/backend/db/prisma.ts`). Fourth
    instance of the `globalThis` rule in this codebase.
 3. **`connection_limit=30&pool_timeout=20` on `DATABASE_URL`.** Same database, same
    credentials — pool tuning only. The dashboard's ~29 independent queries now fit
@@ -853,7 +853,7 @@ a measured accuracy. Real numbers need a real corpus.
    fragments is offered as a candidate. Confidence is the **weakest** part's. Nothing
    is filtered there — `positional_fix` and `score` already decide plausibility, and
    duplicating that judgement is how two copies drift apart.
-2. **Yard-history correction (Levenshtein snap)** — `src/lib/plate-match.ts`, applied
+2. **Yard-history correction (Levenshtein snap)** — `src/backend/services/plate-match.ts`, applied
    in `/api/ocr`. A scrap yard is repeat business: the same trucks return weekly, and
    that history is free prior knowledge. It fixes the one failure the grammar cannot —
    `MH12AB1234` misread as `MH12AB1284` passes every structural check, names a real
@@ -978,7 +978,7 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
   anywhere. That is infrastructure, not code: no application change can fix it.
   The recognition pipeline was not touched.**
 
-  **Why it works locally and not in production.** `src/lib/ocr-supervisor.ts`
+  **Why it works locally and not in production.** `src/backend/ocr/ocr-supervisor.ts`
   **spawns** the FastAPI service as a child process on `localhost:8000` — the app
   starts its own OCR server, which is precisely why development "just works".
   Vercel has no Python runtime and a serverless function has no persistent process
@@ -1089,7 +1089,7 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
   it. No production code was changed.**
 
   **What was measured, not assumed.** A repo-wide scan finds exactly one capture
-  component (`src/components/camera-sheet.tsx`, the only file containing
+  component (`src/frontend/components/camera-sheet.tsx`, the only file containing
   `capture="environment"`) and exactly one client caller of `/api/ocr` — the same
   file. Inward and Outward both import that component and render it with identical
   props. Neither the sheet nor `src/app/api/ocr/route.ts` contains any role
@@ -1385,7 +1385,7 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
 
   ### 1. Create Yard lost focus after one character — ROOT CAUSE FOUND
 
-  Not the page. `src/components/admin/ui.tsx` — the `Modal` component put the
+  Not the page. `src/frontend/components/admin/ui.tsx` — the `Modal` component put the
   Escape listener *and* the initial focus in a single effect keyed on
   `[onClose]`. Every caller passes an inline arrow
   (`onClose={() => setCreating(false)}`), which is a **new function identity on
@@ -1644,7 +1644,7 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
   ### Task 2 — a real Content-Security-Policy, nonce-based
 
   The previous session left CSP undone rather than shipping `'unsafe-inline'`
-  theatre. Now implemented properly in **`src/lib/csp.ts`** + middleware.
+  theatre. Now implemented properly in **`src/backend/http/csp.ts`** + middleware.
 
   - **Per-request nonce** (`crypto.getRandomValues`, base64, edge-safe — no
     `Buffer`). Set on the **request** headers as well as the response, which is the
@@ -1826,7 +1826,7 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
   **Memory went DOWN over two hours.** That is the definitive answer on the leak.
 
   **Re-run on the truly final build** (the two windows above predate the
-  dead-connection retry, which touches `src/lib/prisma.ts`), through a complete
+  dead-connection retry, which touches `src/backend/db/prisma.ts`), through a complete
   suite run and then idle:
 
   | final build, 31.1 min | value |
@@ -1895,7 +1895,7 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
   connection."* Prisma does not retry, so a connection that was already dead
   before the query was sent surfaced to the operator as a broken page.
 
-  `src/lib/prisma.ts` now retries **once**, and the restraint is the design:
+  `src/backend/db/prisma.ts` now retries **once**, and the restraint is the design:
 
   - **Reads only.** A connection-level failure does not tell you whether a WRITE
     was applied before the socket died, so retrying writes risks duplicating
@@ -2033,7 +2033,7 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
   the owner put there through the app.
 
 - **2026-07-26** — **Fix & optimisation session.** No feature removed, no workflow changed, no Yard 1 row touched.
-  - **Admin icons + mobile navigation.** Sidebar emoji replaced with geometric line icons (`src/components/admin/icons.tsx`) drawn on the same 24-unit grid as the Veloce chevron, one stroke width, `currentColor` so active/hover/muted apply to icon and label together — emoji could not do that, they carry their own colour and per-OS weight. **Owner/Manager emoji are unchanged and deliberately so:** the yard app is used in gloves and daylight, where a big coloured glyph is the right affordance. Below 1000px the console now uses a fixed bottom bar (`AdminBottomNav`) with four primary destinations plus a **More** sheet holding Audit Log, the account and Sign out; the old horizontally-scrolling nav strip kept two of five items permanently off-screen behind a swipe nobody discovers. Desktop untouched.
+  - **Admin icons + mobile navigation.** Sidebar emoji replaced with geometric line icons (`src/frontend/components/admin/icons.tsx`) drawn on the same 24-unit grid as the Veloce chevron, one stroke width, `currentColor` so active/hover/muted apply to icon and label together — emoji could not do that, they carry their own colour and per-OS weight. **Owner/Manager emoji are unchanged and deliberately so:** the yard app is used in gloves and daylight, where a big coloured glyph is the right affordance. Below 1000px the console now uses a fixed bottom bar (`AdminBottomNav`) with four primary destinations plus a **More** sheet holding Audit Log, the account and Sign out; the old horizontally-scrolling nav strip kept two of five items permanently off-screen behind a swipe nobody discovers. Desktop untouched.
   - **Favicon and cross-project bleed.** Root cause: no icon was declared, so browsers guessed `/favicon.ico` — and that guess is cached per **host**, not per port, so whichever localhost project answered first owned the tab icon for all of them. Added `src/app/icon.svg` + `apple-icon.svg` (the Veloce mark on a forest disc), declared explicitly in `metadata.icons` with a cache-busting `?v=`, and **made icons reachable without a session** — middleware was 307ing `/icon.svg` to `/login`, so the browser kept whatever it had cached. Do not add `public/favicon.ico` back; that reinstates the host-level fallback.
   - **Port.** This project is pinned to **3001** (`next dev -p 3001` / `next start -p 3001`), `NEXTAUTH_URL` moved with it so callbacks and cookies agree, and all 25 test files retargeted.
   - **Analytics.** Granularity is now **per chart** — it was one shared `gran`, so switching sales to Weekly silently re-bucketed inward, throughput, segregation and both dispatch charts, which defeats the point of the control. 7D/30D/90D replaced by a **date-range picker** (day / month / year / custom from→to / quick presets), computed in Asia/Kolkata to match the server's bucketing; the API gained inclusive `from`/`to` alongside the legacy `days`. The yard filter was **white on white**: it lives in `.aHeadActions`, which matched no rule, so it fell back to the UA default and inherited the console's cream `--text`. Fixed, including the open listbox (`option`/`optgroup`) and `color-scheme: dark` for native pickers. Overview's two navigation buttons — which duplicated the sidebar — replaced by the same picker, now scoping the trend card.
@@ -2049,16 +2049,16 @@ Per module: analyze → implement → `tsc` → **build + restart** → relevant
   - **Two Yard 1 assertions corrected, not the data.** Yard 1 has grown through normal demo use (Vendor 2→3, Sku 9→11, a load and a sort run). `test:admin` and `test:dashboard` hardcoded the prototype's counts, so correct behaviour read as a regression. Both now derive from the database — "this suite did not change Yard 1", and "the dashboard's ready-to-sell set matches inventory" — the same correction already applied to 13 assertions in 6 suites. **No Yard 1 row was added, changed or deleted.**
 
 - **2026-07-26** — **Engineering backlog closed. Final Production Audit passed (§10a). 2,131 passing / 27 suites.**
-  - **Per-account login lockout.** `src/lib/login-lockout.ts` wired into the Auth.js `authorize()` callback, closing the gap the per-IP Edge limiter cannot: that limit must stay generous because a yard office is one NAT address, which left brute force against a *known* email unthrottled. State lives in `LoginAttempt`, so the lock is shared across instances — an in-memory counter would have handed an attacker one full budget per instance. Checked **before** bcrypt, because verifying a locked account's guesses is a free CPU-burn primitive. Backoff is exponential in `lockCount` rather than `failedCount`, so an operator who fat-fingers a password twice a week never accumulates a long lock while a targeted account escalates fast; capped, so auto-unlock always arrives. Unlock is implicit — a past `lockedUntil` simply reads as unlocked, so there is no sweeper to fail while someone waits at the gate. Success clears the streak but **keeps** `lockCount`. Unknown emails are not counted (otherwise anyone could fill the table). Fails open with the password still verified, so failing open costs throttling, never access. `LOGIN_LOCKED` / `LOGIN_UNLOCKED` audited; `GET/POST /api/admin/login-locks` for admin visibility and early release. Login UI unchanged — a locked account gets the same generic message, so no account enumeration. New suite `test:lockout` (38).
+  - **Per-account login lockout.** `src/backend/auth/login-lockout.ts` wired into the Auth.js `authorize()` callback, closing the gap the per-IP Edge limiter cannot: that limit must stay generous because a yard office is one NAT address, which left brute force against a *known* email unthrottled. State lives in `LoginAttempt`, so the lock is shared across instances — an in-memory counter would have handed an attacker one full budget per instance. Checked **before** bcrypt, because verifying a locked account's guesses is a free CPU-burn primitive. Backoff is exponential in `lockCount` rather than `failedCount`, so an operator who fat-fingers a password twice a week never accumulates a long lock while a targeted account escalates fast; capped, so auto-unlock always arrives. Unlock is implicit — a past `lockedUntil` simply reads as unlocked, so there is no sweeper to fail while someone waits at the gate. Success clears the streak but **keeps** `lockCount`. Unknown emails are not counted (otherwise anyone could fill the table). Fails open with the password still verified, so failing open costs throttling, never access. `LOGIN_LOCKED` / `LOGIN_UNLOCKED` audited; `GET/POST /api/admin/login-locks` for admin visibility and early release. Login UI unchanged — a locked account gets the same generic message, so no account enumeration. New suite `test:lockout` (38).
   - **Performance: admin dashboard 1,782 ms → 320 ms, analytics 709 ms → 185 ms, overview 562 ms → 189 ms.** Both targets met, and the fix was not where I first guessed. In-server per-query timing showed every flat aggregate finishing at the ~320 ms pool-wave floor while the nested recent-dispatches read (`OutwardLoad → lines → sku`, `→ sale → buyer`) took **1,121 ms alone** and set the route's wall time: relation levels cannot overlap because each needs the parent ids, so they cost round trips *in series*. Prisma's `relationJoins` + `relationLoadStrategy: "join"` collapsed that batch to 320 ms. Then: `PrismaClient` pinned on `globalThis` in **production too** (dev-only pinning lets a second module evaluation open a second pool — the fourth time this codebase has been bitten by the same rule); `connection_limit=30` so ~29 queries fit one wave; `Sale`/`InwardLoad`/`OutwardLoad` scanned once each with `COUNT(*) FILTER` instead of once per time window (9 queries → 3); analytics' two serial `Promise.all`s merged; the analytics vendor breakdown joined so it no longer needs a dependent follow-up query; `array.find()` inside `yards.map()` replaced with prepared maps. **Trap:** `totalKg`/`quantityKg` are `INTEGER`, so `SUM(integer)` returns **bigint** — typing those raw-query fields as `number` compiled cleanly and then failed at runtime with *"Do not know how to serialize a BigInt"*. Response shapes are byte-identical, which is what `test:dashboard` (162) and `test:charts` (133) assert.
-  - **OCR: the corpus is four photographs, not 150.** `public/uploads/` holds 158 vehicle files that hash to **four distinct images** — the prototype flow re-uploaded the same captures under fresh timestamps, and one 1×1-pixel placeholder PNG accounted for 134 of them. The first coverage run scored per file and reported *"7.8% of 154 images"*, which reads like a study. Both benchmark modes now deduplicate by content hash and print the distinct count first with a loud warning below 20 samples. All four images were inspected and the corpus **labelled**: two front photographs (`HR55AC3348`, `DL7CQ1939`) both read correctly at 0.99, and two genuine negatives (a van rear with no plate in frame, and the blank PNG) both correctly returned nothing — 100% on every metric, **at sample size 4**, and the tool says so itself. Two real pipeline improvements, both testable without a corpus: **two-line plate assembly** (`plate.assemble()` — Indian truck plates are frequently stacked, PaddleOCR returns each line as its own box, and neither half reached the six-character minimum, so a legible plate was discarded entirely; `run_ocr` now keeps each box's geometry, which used to be thrown away) and **yard-history Levenshtein correction** (`src/lib/plate-match.ts` — the same trucks return weekly, and that history fixes the one failure the grammar cannot: `MH12AB1284` for `MH12AB1234` passes every structural check, names a real state, and is wrong; conservative by design — only below 0.80 confidence, only at distance exactly 1, and only when exactly one historical plate is that close, because two neighbours mean genuine ambiguity; tenant-scoped so one yard can never correct a plate using another's fleet). Multi-engine voting and super-resolution deliberately **not** added: the instruction was to add an engine *if it measurably improves accuracy*, and nothing is measurable at n=4. `test:ocr` 54 → **64**, new `test:plate-match` (28). Two bugs caught by their own tests: the snap returned "unchanged" on the first blank history row, silently disabling the whole stage for any yard with one empty `vehicleNumber`; and `tests/fixtures.ts` ran its CLI whenever `process.argv[2]` was set, so any suite importing a fixture constant *while being passed a flag* exited with a usage message before running.
+  - **OCR: the corpus is four photographs, not 150.** `public/uploads/` holds 158 vehicle files that hash to **four distinct images** — the prototype flow re-uploaded the same captures under fresh timestamps, and one 1×1-pixel placeholder PNG accounted for 134 of them. The first coverage run scored per file and reported *"7.8% of 154 images"*, which reads like a study. Both benchmark modes now deduplicate by content hash and print the distinct count first with a loud warning below 20 samples. All four images were inspected and the corpus **labelled**: two front photographs (`HR55AC3348`, `DL7CQ1939`) both read correctly at 0.99, and two genuine negatives (a van rear with no plate in frame, and the blank PNG) both correctly returned nothing — 100% on every metric, **at sample size 4**, and the tool says so itself. Two real pipeline improvements, both testable without a corpus: **two-line plate assembly** (`plate.assemble()` — Indian truck plates are frequently stacked, PaddleOCR returns each line as its own box, and neither half reached the six-character minimum, so a legible plate was discarded entirely; `run_ocr` now keeps each box's geometry, which used to be thrown away) and **yard-history Levenshtein correction** (`src/backend/services/plate-match.ts` — the same trucks return weekly, and that history fixes the one failure the grammar cannot: `MH12AB1284` for `MH12AB1234` passes every structural check, names a real state, and is wrong; conservative by design — only below 0.80 confidence, only at distance exactly 1, and only when exactly one historical plate is that close, because two neighbours mean genuine ambiguity; tenant-scoped so one yard can never correct a plate using another's fleet). Multi-engine voting and super-resolution deliberately **not** added: the instruction was to add an engine *if it measurably improves accuracy*, and nothing is measurable at n=4. `test:ocr` 54 → **64**, new `test:plate-match` (28). Two bugs caught by their own tests: the snap returned "unchanged" on the first blank history row, silently disabling the whole stage for any yard with one empty `vehicleNumber`; and `tests/fixtures.ts` ran its CLI whenever `process.argv[2]` was set, so any suite importing a fixture constant *while being passed a flag* exited with a usage message before running.
   - **`DEPLOYMENT.md`** — environment variables (including why one database needs two URLs, and what silently breaks when that is wrong), build, migrations, backup/restore, OCR deployment, health checks, monitoring in priority order, rollback split by whether the schema changed, scaling, troubleshooting, and a list of load-bearing things that must not be done. README's deployment section rewritten to point at it.
-- **2026-07-26** — **Pre-production Priority 1 complete: OCR now runs itself.** New `src/lib/ocr-supervisor.ts` + `src/instrumentation.ts`: the Next.js server spawns, health-checks, restarts and reports the Python ANPR sidecar, so `npm run start` is the only command anyone runs. Adopts an already-listening service rather than spawning a rival; backoff ladder caps at 2 min so a broken install is never respawned in a tight loop; `awaitOcrReady()` holds a capture up to 8s while models load instead of dropping to manual entry; the child dies with the app so a restart cannot leak a model process. Admin sees state on the dashboard (`AlertRow`, shown only when it needs attention) and at `/api/admin/ocr-status`. Dependencies installed and **`yolov8n.pt` fetched, enabling vehicle localisation** — an accuracy gain with no architecture change. **OCR accuracy is now measurable and measured**: the service returns normalised, plausible Indian plates from real photographs, and `test:ocr-fallback` flipped from "accuracy NOT measured" to accuracy assertions active. New suite `test:ocr-supervisor` (25) kills the child to prove automatic recovery. Two bugs found and fixed in my own work: module-scoped supervisor state is **not** shared between the instrumentation hook and route handlers in Next.js (moved to a `globalThis` singleton, same pattern as the Prisma client) — this had the route reporting "not initialised" and skipping a healthy service; and the restart counter missed the *first* recovery, the one an operator is most likely to be looking at. **Priorities 2–5 were not started** — see §10.
+- **2026-07-26** — **Pre-production Priority 1 complete: OCR now runs itself.** New `src/backend/ocr/ocr-supervisor.ts` + `src/instrumentation.ts`: the Next.js server spawns, health-checks, restarts and reports the Python ANPR sidecar, so `npm run start` is the only command anyone runs. Adopts an already-listening service rather than spawning a rival; backoff ladder caps at 2 min so a broken install is never respawned in a tight loop; `awaitOcrReady()` holds a capture up to 8s while models load instead of dropping to manual entry; the child dies with the app so a restart cannot leak a model process. Admin sees state on the dashboard (`AlertRow`, shown only when it needs attention) and at `/api/admin/ocr-status`. Dependencies installed and **`yolov8n.pt` fetched, enabling vehicle localisation** — an accuracy gain with no architecture change. **OCR accuracy is now measurable and measured**: the service returns normalised, plausible Indian plates from real photographs, and `test:ocr-fallback` flipped from "accuracy NOT measured" to accuracy assertions active. New suite `test:ocr-supervisor` (25) kills the child to prove automatic recovery. Two bugs found and fixed in my own work: module-scoped supervisor state is **not** shared between the instrumentation hook and route handlers in Next.js (moved to a `globalThis` singleton, same pattern as the Prisma client) — this had the route reporting "not initialised" and skipping a healthy service; and the restart counter missed the *first* recovery, the one an operator is most likely to be looking at. **Priorities 2–5 were not started** — see §10.
 - **2026-07-26** — **Production Acceptance Audit passed. No production code changed.** Every workflow, role, business rule, dashboard block, security control and performance property in the acceptance list was verified against the running system. **Zero missing features and zero defects found.** Two things were corrected, both in test code: my own assertion that `/api/ocr` should return 422 for an SVG (it correctly returns 200 with `fallback: true` — the payload is refused by `validateImageDataUrl` and never reaches the model service or storage; the 200 exists because OCR must never block the yard, and `/api/uploads` *does* return a hard 422 for the same input), and an OCR suite that exceeded the 20/min rate limit and so depended on its own run history. New suite `test:ocr-fallback` (34) exercises `/api/ocr` with **real vehicle photographs** from the upload corpus (74 front, 74 rear, 154 material). **Recognition accuracy could NOT be measured** — the FastAPI model service needs YOLOv8n + PaddleOCR weights and its Python dependencies are not installed here; that is recorded as an open verification gap, not a passing result. Measured: client JS 1.0 MB across 28 chunks (largest 222 KB) with 71 KB CSS — no chart library in the bundle; dashboard median 1,435 ms, analytics 598 ms, overview 537 ms against remote Neon; zero client polling (the three `setInterval` sites are SSE heartbeats and a banner clock, not data fetches); every one of the API routes is guarded; the single raw-SQL file uses only parameterised `Prisma.sql`; every shared React Query key maps to exactly one endpoint, so nothing is fetched twice.
 - **2026-07-26** — **Phase 5 Modules 3–7 complete. Phase 5 closed.**
-  - **M3 · Sorting units.** Extracted the duplicated KG/TON/TONNE table out of Inward *and* Outward into `src/lib/units.ts` (the brief said "reuse existing conversion utilities · no duplicated logic"), then gave Sort a selector using it. Sort steps in the **selected unit** (±0.5 TONNE, not ±50 kg) because nudging a 20-tonne lot 50 kg at a time is unusable; KG stays the default because a coarse step cannot always land exactly on zero remaining. `alloc`/`waste` remain kilograms in state — switching units re-renders, it never rewrites state, so a unit change cannot alter what is written. New `test:units` (46).
-  - **M4 · Sort types.** `/api/sort-types` (+`/[id]`): create, rename, deactivate, restore, permanent delete. Owner/Admin full CRUD, **Manager read-only** (GET open; middleware rule + `sortType.write` capability on writes). A sort type IS a non-mixed `Sku` under a `Material` — no new table, because a second tree would mean reconciling every finished kilogram across both. `visible` is the active flag, so history and stock survive deactivation. The zero-reference delete rules are now **shared** in `src/lib/sku-references.ts` rather than restated; extracting them exposed a real gap — the material path was not counting `OutwardLoadLine`, so a material whose SKU had been dispatched could previously be erased. New `SortTypeSheet` mirrors `MaterialSheet` exactly. New `test:sort-types` (68).
-  - **Latent tenant bug found and fixed while building M4** — see §10. The extension's `findUnique` post-filter read `res.yardId`, which any `select` could omit, silently turning every such lookup into a 404. Material *restore* had been broken by this. Fixed in `src/lib/tenant.ts` by widening the projection and trimming the field back out.
+  - **M3 · Sorting units.** Extracted the duplicated KG/TON/TONNE table out of Inward *and* Outward into `src/shared/units.ts` (the brief said "reuse existing conversion utilities · no duplicated logic"), then gave Sort a selector using it. Sort steps in the **selected unit** (±0.5 TONNE, not ±50 kg) because nudging a 20-tonne lot 50 kg at a time is unusable; KG stays the default because a coarse step cannot always land exactly on zero remaining. `alloc`/`waste` remain kilograms in state — switching units re-renders, it never rewrites state, so a unit change cannot alter what is written. New `test:units` (46).
+  - **M4 · Sort types.** `/api/sort-types` (+`/[id]`): create, rename, deactivate, restore, permanent delete. Owner/Admin full CRUD, **Manager read-only** (GET open; middleware rule + `sortType.write` capability on writes). A sort type IS a non-mixed `Sku` under a `Material` — no new table, because a second tree would mean reconciling every finished kilogram across both. `visible` is the active flag, so history and stock survive deactivation. The zero-reference delete rules are now **shared** in `src/backend/services/sku-references.ts` rather than restated; extracting them exposed a real gap — the material path was not counting `OutwardLoadLine`, so a material whose SKU had been dispatched could previously be erased. New `SortTypeSheet` mirrors `MaterialSheet` exactly. New `test:sort-types` (68).
+  - **Latent tenant bug found and fixed while building M4** — see §10. The extension's `findUnique` post-filter read `res.yardId`, which any `select` could omit, silently turning every such lookup into a 404. Material *restore* had been broken by this. Fixed in `src/backend/db/tenant.ts` by widening the projection and trimming the field back out.
   - **M5 · Stock adjustment.** `POST /api/admin/stock-adjustment` — admin only, reason ≥10 chars, actor recorded, one transaction. Takes the **absolute** counted figure, not a delta. Reconciles both sides of the `db:verify` invariant: an increase creates a new untraced lot, a decrease FIFO-consumes exactly as a dispatch does; a shortfall rolls the whole thing back with `LOT_SHORTFALL` rather than leaving the database failing its own audit. Writes a `STOCK_ADJUSTMENT` ledger row so a correction is never counted as trade. Admin UI is an "Adjust" action on the yard-detail Stock tab, reusing the existing `Modal`/`Field`. New `test:stock-adjust` (56), which re-derives `Σ InventoryLot.remainingKg` after every case.
   - **M6 · Responsive.** `/admin/yards/[id]` added at 390/768/1024/1440, across **all seven tabs** (each is a different table) plus the expanded Outward detail row — the deepest nesting on the page, a table inside a table cell. Also added the new Analytics **Dispatch** section to the tab sweep. `test:responsive` 392 → **592, zero failures**: no layout defect was introduced by any of this phase's UI.
   - **M7 · README.** Appended, nothing removed: Outward/dispatch (allocation model), analytics and charts, upload security, rate limiting, sort types, stock adjustment, the record editor's ledger protection, the full 22-suite table, and a Known Risks section. Both the stale-build trap and the run-history-dependence trap are now written down where the next person will read them.

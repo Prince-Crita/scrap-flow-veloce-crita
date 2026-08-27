@@ -14,7 +14,7 @@ cannot — so this document exists rather than a silent architecture change.
 
 ### 1 · Shared rate limiting — **CAN be done on the existing database**
 
-`src/lib/rate-limit.ts` holds fixed-window counters in a process-local `Map`. Two
+`src/backend/http/rate-limit.ts` holds fixed-window counters in a process-local `Map`. Two
 instances therefore grant two separate budgets, so the effective limit is
 `configured × instances`.
 
@@ -30,7 +30,7 @@ schema migration — which is itself blocked (see §3).
 
 ### 2 · Shared realtime event bus — **CANNOT, on the current connection**
 
-`src/lib/realtime.ts` is an in-process pub/sub. An SSE client connected to
+`src/backend/realtime/realtime.ts` is an in-process pub/sub. An SSE client connected to
 instance A never receives an event published on instance B, so a yard would see
 stale stock with no error and no indication anything was wrong. **This is the
 actual production blocker.** It is also the failure mode most likely to be
@@ -53,7 +53,7 @@ like safety while providing none.
 
 ### 4 · OCR supervision — **already multi-instance safe**
 
-`src/lib/ocr-supervisor.ts` adopts a service that is already answering rather than
+`src/backend/ocr/ocr-supervisor.ts` adopts a service that is already answering rather than
 spawning a rival, so N instances on one host converge on one model process. For
 instances on separate hosts, run OCR as its own service and set
 `OCR_AUTOSTART=0`. No change needed.
@@ -111,7 +111,7 @@ If you choose A, the implementation order is:
    Remove `db push` from `vercel.json`.
 3. Postgres-backed rate limiting (§1) — now that migrations exist.
 4. `LISTEN`/`NOTIFY` behind the existing `publish()` / `subscribe()` interface in
-   `src/lib/realtime.ts`. **The interface must not change** — the channel→queryKey
+   `src/backend/realtime/realtime.ts`. **The interface must not change** — the channel→queryKey
    invalidation table and every call site stay as they are, so this is a swap of
    the transport only, and `test:realtime` (18) plus `test:isolation` (59) remain
    the regression gate.

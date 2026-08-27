@@ -1,5 +1,5 @@
-import { requireAdmin } from "@/lib/api";
-import { subscribePlatform, type YardEvent } from "@/lib/realtime";
+import { requireAdmin } from "@/backend/http/api";
+import { subscribePlatform, type YardEvent } from "@/backend/realtime/realtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

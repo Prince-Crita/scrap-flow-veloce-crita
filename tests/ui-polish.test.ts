@@ -484,11 +484,11 @@ async function main() {
 
       // The contract that caused the bug: the channel map must list `stock` for
       // both channels, and the sheets must invalidate through it.
-      const src = (await import("node:fs")).readFileSync("src/components/realtime/provider.tsx", "utf8");
+      const src = (await import("node:fs")).readFileSync("src/frontend/components/realtime/provider.tsx", "utf8");
       check("the channel map is exported for mutations to reuse", /export const CHANNEL_QUERY_KEYS/.test(src));
       check("useInvalidateChannels exists", /export function useInvalidateChannels/.test(src));
-      const vs = (await import("node:fs")).readFileSync("src/components/vendor-sheet.tsx", "utf8");
-      const ms = (await import("node:fs")).readFileSync("src/components/material-sheet.tsx", "utf8");
+      const vs = (await import("node:fs")).readFileSync("src/frontend/components/vendor-sheet.tsx", "utf8");
+      const ms = (await import("node:fs")).readFileSync("src/frontend/components/material-sheet.tsx", "utf8");
       check("vendor creation invalidates via the channel map", /invalidateChannels\("vendors"\)/.test(vs));
       check("material creation invalidates materials AND stock", /invalidateChannels\("materials",\s*"stock"\)/.test(ms));
       await ctx.close();

@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Poppins, JetBrains_Mono } from "next/font/google";
-import "./globals.css";
-import { Providers } from "@/components/providers";
+import "@/frontend/styles/globals.css";
+import { Providers } from "@/frontend/components/providers";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -67,7 +67,7 @@ export const viewport: Viewport = {
 };
 
 /**
- * `data-shell="admin"` activates src/styles/admin.css (every rule in that file
+ * `data-shell="admin"` activates src/frontend/styles/admin.css (every rule in that file
  * is nested under it). The value comes from a request header set by the
  * middleware, so the correct shell is server-rendered on the first byte — the
  * phone-centred body layout never flashes on an admin route, and the console

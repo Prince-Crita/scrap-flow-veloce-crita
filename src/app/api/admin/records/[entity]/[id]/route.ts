@@ -1,6 +1,6 @@
-import { requireAdmin, ok, fail } from "@/lib/api";
-import { audit, diffFields } from "@/lib/audit";
-import { publish } from "@/lib/realtime";
+import { requireAdmin, ok, fail } from "@/backend/http/api";
+import { audit, diffFields } from "@/backend/services/audit";
+import { publish } from "@/backend/realtime/realtime";
 import {
   EDITABLE_ENTITIES,
   RECORD_SCHEMAS,
@@ -8,7 +8,7 @@ import {
   ENTITY_MODEL,
   findLedgerFields,
   type EditableEntity,
-} from "@/lib/admin-records";
+} from "@/backend/services/admin-records";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +16,11 @@ export const dynamic = "force-dynamic";
  * PATCH /api/admin/records/{entity}/{id}
  *
  * The admin "edit any record" surface. One endpoint, a per-entity field
- * whitelist (src/lib/admin-records.ts), before/after auditing, and a realtime
+ * whitelist (src/backend/services/admin-records.ts), before/after auditing, and a realtime
  * publish so the yard's Owner and Manager see the correction immediately.
  *
  * Ledger-derived quantities are refused with an explanation rather than silently
- * dropped — see the header of src/lib/admin-records.ts for the reasoning.
+ * dropped — see the header of src/backend/services/admin-records.ts for the reasoning.
  */
 export async function PATCH(req: Request, ctx: { params: Promise<{ entity: string; id: string }> }) {
   const guard = await requireAdmin();

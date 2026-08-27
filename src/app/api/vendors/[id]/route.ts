@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { requireYardCapability, parseBody, ok, fail } from "@/lib/api";
-import { publish } from "@/lib/realtime";
-import { audit } from "@/lib/audit";
+import { requireYardCapability, parseBody, ok, fail } from "@/backend/http/api";
+import { publish } from "@/backend/realtime/realtime";
+import { audit } from "@/backend/services/audit";
 
 export const dynamic = "force-dynamic";
 

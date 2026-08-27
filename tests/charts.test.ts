@@ -36,7 +36,7 @@ import {
   colorAt,
   PALETTE,
   DEFAULT_BOX,
-} from "../src/components/admin/charts/scale";
+} from "../src/frontend/components/admin/charts/scale";
 import { TEST_YARD_CODE, TEST_OWNER } from "./fixtures";
 
 const prisma = new PrismaClient();
@@ -365,9 +365,9 @@ async function main() {
   const sourceFiles = [
     "src/app/(admin)/admin/page.tsx",
     "src/app/(admin)/admin/analytics/page.tsx",
-    "src/components/admin/charts/primitives.tsx",
-    "src/components/admin/charts/scale.ts",
-    "src/components/admin/admin-realtime.tsx",
+    "src/frontend/components/admin/charts/primitives.tsx",
+    "src/frontend/components/admin/charts/scale.ts",
+    "src/frontend/components/admin/admin-realtime.tsx",
     "src/app/(app)/stock/page.tsx",
     "src/app/(app)/sell/page.tsx",
   ];
@@ -377,7 +377,7 @@ async function main() {
   }
   // setInterval is allowed only for the SSE heartbeat and the impersonation
   // elapsed-time ticker — never to poll an endpoint.
-  const chartSrc = readFileSync("src/components/admin/charts/primitives.tsx", "utf8");
+  const chartSrc = readFileSync("src/frontend/components/admin/charts/primitives.tsx", "utf8");
   check("chart primitives contain no timers at all", !/setInterval|setTimeout/.test(chartSrc));
   check("chart primitives issue no fetches", !/fetch\(/.test(chartSrc));
 

@@ -14,7 +14,7 @@
  * touched. Usage: app on :3001, then `npx tsx tests/inward-conversion.test.ts`
  */
 import { PrismaClient } from "@prisma/client";
-import { toKilograms, fromKilograms, UNITS, type UnitCode } from "../src/lib/units";
+import { toKilograms, fromKilograms, UNITS, type UnitCode } from "../src/shared/units";
 import { TEST_YARD_CODE, TEST_MANAGER } from "./fixtures";
 
 const prisma = new PrismaClient();

@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { requireAdmin, parseBody, ok, fail } from "@/lib/api";
-import { audit, diffFields } from "@/lib/audit";
-import { publish } from "@/lib/realtime";
+import { requireAdmin, parseBody, ok, fail } from "@/backend/http/api";
+import { audit, diffFields } from "@/backend/services/audit";
+import { publish } from "@/backend/realtime/realtime";
 
 export const dynamic = "force-dynamic";
 

@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { requireYardCapability, parseBody, ok, fail } from "@/lib/api";
-import { publishMany } from "@/lib/realtime";
-import { audit } from "@/lib/audit";
-import { countSkuReferences } from "@/lib/sku-references";
+import { requireYardCapability, parseBody, ok, fail } from "@/backend/http/api";
+import { publishMany } from "@/backend/realtime/realtime";
+import { audit } from "@/backend/services/audit";
+import { countSkuReferences } from "@/backend/services/sku-references";
 
 export const dynamic = "force-dynamic";
 

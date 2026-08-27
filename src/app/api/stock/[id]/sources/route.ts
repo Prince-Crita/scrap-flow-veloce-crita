@@ -1,4 +1,4 @@
-import { requireYard, ok, fail } from "@/lib/api";
+import { requireYard, ok, fail } from "@/backend/http/api";
 
 export const dynamic = "force-dynamic";
 

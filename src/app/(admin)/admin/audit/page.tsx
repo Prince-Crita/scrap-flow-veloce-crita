@@ -2,8 +2,8 @@
 
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getJson } from "@/lib/fetcher";
-import { PageHead, Card, Pill, EmptyState, SkeletonRows, when, duration, num } from "@/components/admin/ui";
+import { getJson } from "@/frontend/lib/api-client";
+import { PageHead, Card, Pill, EmptyState, SkeletonRows, when, duration, num } from "@/frontend/components/admin/ui";
 
 /**
  * Plain-English label for an audit action. The raw `action` string is still

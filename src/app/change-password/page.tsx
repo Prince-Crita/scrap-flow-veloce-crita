@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { sendJson, ApiError } from "@/lib/fetcher";
+import { sendJson, ApiError } from "@/frontend/lib/api-client";
 
 /**
  * Forced password change after an admin reset.

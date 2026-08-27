@@ -1,14 +1,14 @@
 import { z } from "zod";
 import { cookies } from "next/headers";
-import { requireAdmin, parseBody, ok, fail } from "@/lib/api";
-import { audit } from "@/lib/audit";
+import { requireAdmin, parseBody, ok, fail } from "@/backend/http/api";
+import { audit } from "@/backend/services/audit";
 import {
   IMPERSONATION_COOKIE,
   IMPERSONATION_TTL_SECONDS,
   signImpersonationToken,
   verifyImpersonationToken,
   impersonationCookieOptions,
-} from "@/lib/impersonation";
+} from "@/backend/auth/impersonation";
 
 export const dynamic = "force-dynamic";
 

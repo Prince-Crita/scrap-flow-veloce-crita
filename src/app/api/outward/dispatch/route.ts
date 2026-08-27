@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
-import { requireYard, parseBody, ok, fail } from "@/lib/api";
-import { nextCounter, formatDispatch } from "@/lib/counters";
-import { publishMany } from "@/lib/realtime";
-import { dispatchStatusFor, validateDispatch } from "@/lib/allocation";
+import { requireYard, parseBody, ok, fail } from "@/backend/http/api";
+import { nextCounter, formatDispatch } from "@/backend/services/counters";
+import { publishMany } from "@/backend/realtime/realtime";
+import { dispatchStatusFor, validateDispatch } from "@/backend/services/allocation";
 
 export const dynamic = "force-dynamic";
 

@@ -3,9 +3,9 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getJson, sendJson, ApiError } from "@/lib/fetcher";
-import { PageHead, Card, Pill, Modal, Field, EmptyState, SkeletonRows, Kpi, num, when } from "@/components/admin/ui";
-import { roleLabel } from "@/lib/role-label";
+import { getJson, sendJson, ApiError } from "@/frontend/lib/api-client";
+import { PageHead, Card, Pill, Modal, Field, EmptyState, SkeletonRows, Kpi, num, when } from "@/frontend/components/admin/ui";
+import { roleLabel } from "@/shared/role-label";
 
 type UserRow = {
   id: string;

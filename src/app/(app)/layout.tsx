@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
-import { adminDb } from "@/lib/tenant";
-import { getYardContext } from "@/lib/yard-context";
-import { UIProvider, ToastHost, PartyHost, ConfirmHost } from "@/components/ui-provider";
-import { AppHeader, Ticker, XpBar } from "@/components/app-chrome";
-import { BottomNav } from "@/components/bottom-nav";
-import { RealtimeProvider } from "@/components/realtime/provider";
-import { ImpersonationBanner } from "@/components/admin/impersonation-banner";
+import { auth } from "@/backend/auth/auth";
+import { adminDb } from "@/backend/db/tenant";
+import { getYardContext } from "@/backend/auth/yard-context";
+import { UIProvider, ToastHost, PartyHost, ConfirmHost } from "@/frontend/components/ui-provider";
+import { AppHeader, Ticker, XpBar } from "@/frontend/components/app-chrome";
+import { BottomNav } from "@/frontend/components/bottom-nav";
+import { ScreenTransition } from "@/frontend/components/route-transition";
+import { RealtimeProvider } from "@/frontend/components/realtime/provider";
+import { ImpersonationBanner } from "@/frontend/components/admin/impersonation-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Ticker />
           <XpBar />
           <div className="screens">
-            <section className="screen">{children}</section>
+            <ScreenTransition>{children}</ScreenTransition>
           </div>
           <BottomNav role={user.role} />
           <ToastHost />

@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { requireOwnerYard, parseBody, ok, fail } from "@/lib/api";
-import { nextCounter, formatInvoice } from "@/lib/counters";
-import { publishMany } from "@/lib/realtime";
-import { dispatchStatusFor, sellableKg } from "@/lib/allocation";
+import { requireOwnerYard, parseBody, ok, fail } from "@/backend/http/api";
+import { nextCounter, formatInvoice } from "@/backend/services/counters";
+import { publishMany } from "@/backend/realtime/realtime";
+import { dispatchStatusFor, sellableKg } from "@/backend/services/allocation";
 
 export const dynamic = "force-dynamic";
 

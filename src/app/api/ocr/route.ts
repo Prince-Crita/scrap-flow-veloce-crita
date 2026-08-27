@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { requireYard, parseBody, ok, MAX_IMAGE_BODY_BYTES } from "@/lib/api";
-import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/lib/image-validate";
-import { tooManyRequests } from "@/lib/rate-limit";
-import { rateLimitShared } from "@/lib/rate-limit-shared";
-import { awaitOcrReady, ocrStatus, resolveOcrServiceUrl } from "@/lib/ocr-supervisor";
-import { snapToKnownPlate, SNAP_HISTORY_LIMIT, SNAP_CONFIDENCE_CEILING } from "@/lib/plate-match";
+import { requireYard, parseBody, ok, MAX_IMAGE_BODY_BYTES } from "@/backend/http/api";
+import { validateImageDataUrl, MAX_DATA_URL_CHARS } from "@/backend/storage/image-validate";
+import { tooManyRequests } from "@/backend/http/rate-limit";
+import { rateLimitShared } from "@/backend/http/rate-limit-shared";
+import { awaitOcrReady, ocrStatus, resolveOcrServiceUrl } from "@/backend/ocr/ocr-supervisor";
+import { snapToKnownPlate, SNAP_HISTORY_LIMIT, SNAP_CONFIDENCE_CEILING } from "@/backend/services/plate-match";
 
 export const dynamic = "force-dynamic";
 

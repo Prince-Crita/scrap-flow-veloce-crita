@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { requireYard, requireYardCapability, parseBody, ok } from "@/lib/api";
-import { publish } from "@/lib/realtime";
+import { requireYard, requireYardCapability, parseBody, ok } from "@/backend/http/api";
+import { publish } from "@/backend/realtime/realtime";
 
 export const dynamic = "force-dynamic";
 

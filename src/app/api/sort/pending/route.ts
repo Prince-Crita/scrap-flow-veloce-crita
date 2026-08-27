@@ -1,4 +1,5 @@
-import { requireYard, ok } from "@/lib/api";
+import { requireYard, ok } from "@/backend/http/api";
+import { loadRef } from "@/shared/load-ref";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const guard = await requireYard();
   if ("res" in guard) return guard.res;
-  const { prisma } = guard;
+  const { prisma, yardId } = guard;
 
-  // The SKU tree does not depend on the loads, so the two run together rather
-  // than costing the Sort screen two serial round trips on every open.
-  const [loads, skus] = await Promise.all([
+  // Neither the SKU tree nor the yard code depends on the loads, so all three
+  // run together rather than costing the Sort screen serial round trips on open.
+  const [loads, skus, yard] = await Promise.all([
     prisma.inwardLoad.findMany({
       relationLoadStrategy: "join",
       where: { status: "RECEIVED" },
@@ -26,11 +27,16 @@ export async function GET() {
       include: {
         vendor: { select: { name: true } },
         lines: { orderBy: { sequence: "asc" } },
+        // Who booked the load in. Shown in the selector so an operator can tell
+        // two same-vendor, same-vehicle lots apart by who received them.
+        capturedBy: { select: { name: true, role: true } },
       },
     }),
     // Child (non-mixed) SKUs grouped by material, plus the mixed source bucket.
     prisma.sku.findMany({ select: { id: true, name: true, materialId: true, isMixedBucket: true } }),
+    prisma.yard.findUnique({ where: { id: yardId }, select: { shortCode: true, yardCode: true } }),
   ]);
+  const shortCode = yard?.shortCode ?? yard?.yardCode ?? "";
 
   /**
    * How much of each load/material has already been segregated.
@@ -85,6 +91,8 @@ export async function GET() {
         loadId: l.id,
         lineId: p.lineId,
         lotNumber: l.lotNumber,
+        /** Platform-unique, human-readable — see src/shared/load-ref.ts. */
+        loadRef: loadRef({ shortCode, lotNumber: l.lotNumber }),
         materialLabel: p.materialLabel,
         /** The unsorted balance — what this run may allocate. */
         totalKg: remainingKg,
@@ -93,6 +101,10 @@ export async function GET() {
         sortedKg,
         vendorName: l.vendor?.name ?? "Walk-in",
         vehicleNumber: l.vehicleNumber ?? "—",
+        // The person and the role are returned separately: the selector prefers
+        // the name, the lot card shows both, and neither has to parse a label.
+        capturedByName: l.capturedBy?.name ?? null,
+        capturedByRole: l.capturedBy?.role ?? null,
         createdAt: l.createdAt,
         sourceSkuId: source?.id ?? null,
         targets: targets.map((t) => ({ skuId: t.id, name: t.name })),

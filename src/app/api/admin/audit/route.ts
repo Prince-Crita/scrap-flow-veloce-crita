@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireAdmin, parseQuery, ok } from "@/lib/api";
+import { requireAdmin, parseQuery, ok } from "@/backend/http/api";
 
 export const dynamic = "force-dynamic";
 

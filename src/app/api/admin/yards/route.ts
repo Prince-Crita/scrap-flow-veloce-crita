@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { requireAdmin, parseBody, ok, fail } from "@/lib/api";
-import { audit } from "@/lib/audit";
-import { provisionYard } from "@/lib/yard-provisioning";
+import { requireAdmin, parseBody, ok, fail } from "@/backend/http/api";
+import { audit } from "@/backend/services/audit";
+import { provisionYard } from "@/backend/services/yard-provisioning";
+import { ensureShortCode } from "@/backend/services/yard-short-code";
 
 export const dynamic = "force-dynamic";
 
@@ -122,6 +123,10 @@ export async function POST(req: Request) {
         active: true,
       },
     });
+
+    // The short code that will lead every load reference this yard ever issues
+    // ("TY1-0005"). Assigned here, once, and never rewritten afterwards.
+    await ensureShortCode(tx, created.id);
 
     if (d.seedMaterials) await provisionYard(tx, created.id);
 

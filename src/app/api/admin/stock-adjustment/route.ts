@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { requireAdmin, parseBody, ok, fail } from "@/lib/api";
-import { audit } from "@/lib/audit";
-import { publishMany } from "@/lib/realtime";
-import { scopedDb } from "@/lib/tenant";
+import { requireAdmin, parseBody, ok, fail } from "@/backend/http/api";
+import { audit } from "@/backend/services/audit";
+import { publishMany } from "@/backend/realtime/realtime";
+import { scopedDb } from "@/backend/db/tenant";
 
 export const dynamic = "force-dynamic";
 

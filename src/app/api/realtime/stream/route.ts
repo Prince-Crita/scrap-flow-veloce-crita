@@ -1,5 +1,5 @@
-import { requireYard } from "@/lib/api";
-import { subscribeYard, type YardEvent } from "@/lib/realtime";
+import { requireYard } from "@/backend/http/api";
+import { subscribeYard, type YardEvent } from "@/backend/realtime/realtime";
 
 export const dynamic = "force-dynamic";
 // SSE needs a long-lived Node stream, not the edge runtime.
@@ -12,7 +12,7 @@ export const runtime = "nodejs";
  * session) — never from a query parameter. A client therefore cannot subscribe
  * to a yard it does not belong to: there is no input to tamper with.
  *
- * Kept intentionally small; see src/lib/realtime.ts for the swap point if this
+ * Kept intentionally small; see src/backend/realtime/realtime.ts for the swap point if this
  * moves to a hosted provider.
  */
 const HEARTBEAT_MS = 25_000;

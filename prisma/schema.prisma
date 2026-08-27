@@ -94,6 +94,18 @@ enum DispatchStatus {
 model Yard {
   id            String    @id @default(cuid())
   yardCode      String    @unique
+  /// Short, spoken form of `yardCode` — "TY1", "Y2", "BY1".
+  ///
+  /// The business reference printed on a load ("TY1-0005") leads with this, so it
+  /// is assigned ONCE and never changed: an identifier a person reads out, and
+  /// that another system will resolve, cannot be allowed to move. `@unique` is
+  /// what makes "yard short code + sequence" globally unambiguous, since the
+  /// sequence itself is only unique within a yard.
+  ///
+  /// Nullable purely so the column could be added without rewriting existing
+  /// rows; every yard is back-filled (prisma/backfill-yard-short-codes.ts) and
+  /// any yard still missing one is given a code before its first load is saved.
+  shortCode     String?   @unique
   yardName      String
   ownerName     String?
   address       String?
@@ -287,9 +299,30 @@ model InwardLoad {
   vehicleNumber      String?
   vehicleType        String?
   driverName         String?
+  /// Driver's contact number, captured alongside the name in Vehicle Details.
+  ///
+  /// Mirrors `Sale.driverPhone` exactly — same type, same optionality, same
+  /// 15-character cap at the API boundary — because it is the same fact about
+  /// the same kind of person; there was simply no column for it on the inward
+  /// side. Nullable and additive: every existing load reads as "not captured".
+  driverPhone        String?
   ocrConfidence      Float?
   frontImageUrl      String?
   backImageUrl       String?
+  /// Did the vendor hand over an invoice / challan with this load?
+  ///
+  /// Three-state on purpose. NULL means the question was never asked — every load
+  /// saved before this field existed — and that is NOT the same answer as `false`,
+  /// which is an operator explicitly recording "no paperwork came with it". A
+  /// reader that coerces NULL to false would be inventing a fact about history, so
+  /// the UI renders NULL as "—".
+  hasInvoice         Boolean?
+  /// Number printed on that paperwork, when there is any. Free text: a challan
+  /// book has no format this application controls.
+  invoiceNumber      String?
+  /// Photograph of the invoice / challan. Only ever set when `hasInvoice` is true —
+  /// that pairing is what lets "Invoice: Yes" mean the document actually exists.
+  invoiceUrl         String?
   /// Scan of the weighbridge ticket. Evidence only — the authoritative weight
   /// is always the sum of the load's lines, never anything read off the slip.
   weighbridgeSlipUrl String?
@@ -333,6 +366,18 @@ model WeightEntry {
   sku       Sku?            @relation(fields: [skuId], references: [id])
   sequence  Int
   kg        Int
+  /// Purchase rate agreed for THIS weighment, in ₹ per kilogram.
+  ///
+  /// Deliberately on the weighment and not on the line. Lines are grouped by SKU
+  /// at commit (see InwardLoadLine), so the same material bought twice off one
+  /// vehicle at two different rates collapses into a single line — storing the
+  /// rate there would have to pick one of them and silently lose the other. The
+  /// weighment is the row that survives that grouping intact.
+  ///
+  /// Null = no rate was captured, which is every load saved before this existed.
+  /// No amount column: value is kg × rate and is derived by the reader, so there
+  /// is never a stored total that can disagree with its own inputs.
+  ratePerKg Float?
   createdAt DateTime        @default(now())
 
   @@index([loadId])

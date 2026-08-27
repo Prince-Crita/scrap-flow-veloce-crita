@@ -77,7 +77,7 @@ async function main() {
    * ── Derived expectations ─────────────────────────────────────────────────
    *
    * Scoped to yards that are still operating, because that is what the platform
-   * endpoints now count (src/lib/active-yards.ts). An archived yard keeps every
+   * endpoints now count (src/backend/services/active-yards.ts). An archived yard keeps every
    * dispatch it ever made, but those rows stopped being part of the platform's
    * figures, so comparing against the whole database would assert the behaviour
    * this release deliberately removed.

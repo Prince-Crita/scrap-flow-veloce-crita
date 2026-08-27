@@ -12,7 +12,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { TEST_YARD_CODE, TEST_OWNER } from "./fixtures";
-import { nextStreak, dayKey, daysBetween } from "../src/lib/streak";
+import { nextStreak, dayKey, daysBetween } from "../src/backend/services/streak";
 
 const prisma = new PrismaClient();
 const BASE = process.env.BASE_URL || "http://localhost:3001";

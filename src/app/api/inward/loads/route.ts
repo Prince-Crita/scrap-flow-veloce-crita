@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
-import { requireYard, parseBody, ok, fail } from "@/lib/api";
-import { nextCounter, formatLot } from "@/lib/counters";
-import { publishMany } from "@/lib/realtime";
+import { requireYard, parseBody, ok, fail } from "@/backend/http/api";
+import { nextCounter, formatLot } from "@/backend/services/counters";
+import { publishMany } from "@/backend/realtime/realtime";
+import { loadRef } from "@/shared/load-ref";
+import { ensureShortCode } from "@/backend/services/yard-short-code";
 
 export const dynamic = "force-dynamic";
 
@@ -21,22 +23,43 @@ const schema = z.object({
   materialSkuId: z.string().min(1).optional(),
   entries: z.array(z.number().int().positive()).min(1).max(50).optional(),
   /**
-   * The load cart: one item per "Add To Load" tap. Several items may name the
+   * The load cart: one item per "Add To Cart" tap. Several items may name the
    * same material — they are grouped by SKU at commit so each material ends up
    * with exactly one line and one traceable InventoryLot.
    *
    * `kg` is always kilograms. The keypad may capture Ton/Tonne, but the unit is
    * converted client-side and never crosses this boundary.
+   *
+   * `ratePerKg` is the purchase rate agreed for THAT cart item. It stays on the
+   * item rather than the material because the same material can be bought twice
+   * off one vehicle at two different rates; the weighment rows below are what
+   * preserve that distinction through the SKU grouping.
    */
   lines: z
-    .array(z.object({ skuId: z.string().min(1), kg: z.number().int().positive() }))
+    .array(
+      z.object({
+        skuId: z.string().min(1),
+        kg: z.number().int().positive(),
+        ratePerKg: z.number().min(0).max(1_000_000).optional().nullable(),
+      })
+    )
     .min(1)
     .max(50)
     .optional(),
   vendorId: z.string().min(1).optional().nullable(),
+  /**
+   * Did the vendor supply an invoice / challan? Optional so older clients keep
+   * working, and tri-state on the way in for the same reason it is tri-state in
+   * the schema: an omitted answer is "not recorded", not "no".
+   */
+  hasInvoice: z.boolean().optional().nullable(),
+  invoiceNumber: z.string().trim().max(60).optional().nullable(),
+  invoiceUrl: z.string().max(600).optional().nullable(),
   vehicleNumber: z.string().max(20).optional().nullable(),
   vehicleType: z.string().max(30).optional().nullable(),
   driverName: z.string().max(80).optional().nullable(),
+  // Same 15-character cap as Sale.driverPhone, which this mirrors.
+  driverPhone: z.string().trim().max(15).optional().nullable(),
   ocrConfidence: z.number().min(0).max(1).optional().nullable(),
   frontImageUrl: z.string().max(600).optional().nullable(),
   backImageUrl: z.string().max(600).optional().nullable(),
@@ -55,7 +78,7 @@ export async function POST(req: Request) {
 
   // Normalise both request shapes to a single cart. The legacy form is one
   // material repeated across its weighments; the new form already is a cart.
-  const cart: { skuId: string; kg: number }[] =
+  const cart: { skuId: string; kg: number; ratePerKg?: number | null }[] =
     d.lines && d.lines.length > 0
       ? d.lines
       : d.materialSkuId && d.entries && d.entries.length > 0
@@ -67,15 +90,47 @@ export async function POST(req: Request) {
   const total = cart.reduce((a, b) => a + b.kg, 0);
   if (total <= 0) return fail("EMPTY_LOAD", "Add at least one weighment", 422);
 
+  /**
+   * "Invoice: Yes" has to mean the document is actually there.
+   *
+   * Recording the answer without the upload would leave a load claiming
+   * paperwork that nothing can produce, so a YES with no stored image is
+   * rejected outright, and the number/image are only kept when the answer is
+   * YES — a NO can never drag along a contradictory attachment.
+   */
+  if (d.hasInvoice === true && !d.invoiceUrl) {
+    return fail("INVOICE_MISSING", "Attach the invoice / challan, or answer No", 422);
+  }
+  const hasInvoice = d.hasInvoice ?? null;
+  const invoiceNumber = hasInvoice === true ? (d.invoiceNumber?.trim() || null) : null;
+  const invoiceUrl = hasInvoice === true ? (d.invoiceUrl ?? null) : null;
+
+  /**
+   * The yard's short code, which leads the user-facing load reference.
+   *
+   * `ensureShortCode` assigns one only if the yard has none, so this is a plain
+   * read for every yard after the first time — and it guarantees that no load
+   * can ever be saved into a yard that has no stable code to be referenced by.
+   * One lookup, reused by the replay answers and the success answer alike; see
+   * src/shared/load-ref.ts for why the reference is composed rather than stored.
+   */
+  const shortCode =
+    (await ensureShortCode(prisma, yardId)) ??
+    (await prisma.yard.findUnique({ where: { id: yardId }, select: { yardCode: true } }))?.yardCode ??
+    "";
+
   // Replay check before doing any work. The unique index on
   // (yardId, clientRequestId) is the race-condition backstop below.
   if (d.clientRequestId) {
     const existing = await prisma.inwardLoad.findFirst({
       where: { clientRequestId: d.clientRequestId },
-      select: { lotNumber: true, totalKg: true, materialLabel: true },
+      select: { lotNumber: true, totalKg: true, materialLabel: true, createdAt: true },
     });
     if (existing) {
-      return ok({ load: existing, replayed: true }, { status: 200 });
+      return ok(
+        { load: { ...existing, loadRef: loadRef({ shortCode, lotNumber: existing.lotNumber }) }, replayed: true },
+        { status: 200 }
+      );
     }
   }
 
@@ -133,9 +188,13 @@ export async function POST(req: Request) {
         vehicleNumber: d.vehicleNumber ?? null,
         vehicleType: d.vehicleType ?? null,
         driverName: d.driverName ?? null,
+        driverPhone: d.driverPhone?.trim() || null,
         ocrConfidence: d.ocrConfidence ?? null,
         frontImageUrl: d.frontImageUrl ?? null,
         backImageUrl: d.backImageUrl ?? null,
+        hasInvoice,
+        invoiceNumber,
+        invoiceUrl,
         weighbridgeSlipUrl: d.weighbridgeSlipUrl ?? null,
         capturedById: guard.user.id,
         status: "RECEIVED",
@@ -195,7 +254,8 @@ export async function POST(req: Request) {
     }
 
     // Individual weighments keep their own row for the audit trail, each one
-    // attributed to the material it was booked against.
+    // attributed to the material it was booked against — and to the rate it was
+    // bought at, which the SKU grouping above would otherwise flatten away.
     for (const [i, item] of cart.entries()) {
       await tx.weightEntry.create({
         data: {
@@ -205,11 +265,19 @@ export async function POST(req: Request) {
           skuId: item.skuId,
           sequence: i + 1,
           kg: item.kg,
+          ratePerKg: item.ratePerKg ?? null,
         },
       });
     }
 
-      return { id: load.id, lotNumber, totalKg: total, materialLabel: loadLabel, skuIds };
+      return {
+        id: load.id,
+        lotNumber,
+        totalKg: total,
+        materialLabel: loadLabel,
+        skuIds,
+        createdAt: load.createdAt,
+      };
     });
   } catch (e) {
     // Two simultaneous saves with the same key: one commits, the other hits the
@@ -218,9 +286,14 @@ export async function POST(req: Request) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002" && d.clientRequestId) {
       const winner = await prisma.inwardLoad.findFirst({
         where: { clientRequestId: d.clientRequestId },
-        select: { lotNumber: true, totalKg: true, materialLabel: true },
+        select: { lotNumber: true, totalKg: true, materialLabel: true, createdAt: true },
       });
-      if (winner) return ok({ load: winner, replayed: true }, { status: 200 });
+      if (winner) {
+        return ok(
+          { load: { ...winner, loadRef: loadRef({ shortCode, lotNumber: winner.lotNumber }) }, replayed: true },
+          { status: 200 }
+        );
+      }
     }
     throw e;
   }
@@ -238,5 +311,15 @@ export async function POST(req: Request) {
     { channel: "sort", action: "pending-changed", entity: "InwardLoad", entityId: result.id, actorId: guard.user.id },
   ]);
 
-  return ok({ load: { lotNumber: result.lotNumber, totalKg: result.totalKg, materialLabel: result.materialLabel } }, { status: 201 });
+  return ok(
+    {
+      load: {
+        lotNumber: result.lotNumber,
+        totalKg: result.totalKg,
+        materialLabel: result.materialLabel,
+        loadRef: loadRef({ shortCode, lotNumber: result.lotNumber }),
+      },
+    },
+    { status: 201 }
+  );
 }

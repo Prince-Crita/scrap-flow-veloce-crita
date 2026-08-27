@@ -16,7 +16,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { TEST_YARD_CODE, TEST_OWNER, TEST_MANAGER } from "./fixtures";
-import { dispatchStatusFor, remainingKg, sellableKg, validateDispatch } from "../src/lib/allocation";
+import { dispatchStatusFor, remainingKg, sellableKg, validateDispatch } from "../src/backend/services/allocation";
 
 const prisma = new PrismaClient();
 const BASE = process.env.BASE_URL || "http://localhost:3001";
