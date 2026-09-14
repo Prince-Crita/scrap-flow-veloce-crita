@@ -195,8 +195,11 @@ export default function InwardPage() {
   const [slip, setSlip] = useState<{ url: string; name: string } | null>(null);
   const [slipBusy, setSlipBusy] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
-  /** Camera or gallery for the required slip; the upload itself is unchanged. */
-  const slipPicker = usePhotoSource((f) => void onSlipPicked(f), { title: "Upload required slip" });
+  /**
+   * Camera or gallery for the weight proof — the same shared picker the rest
+   * of the app uses. Opened by SAVE LOAD, not by a control of its own.
+   */
+  const slipPicker = usePhotoSource((f) => void onSlipPicked(f), { title: "Upload weight proof" });
   /** Same control, same endpoint, for the vendor's invoice / challan. */
   const invoicePicker = usePhotoSource((f) => void onInvoicePicked(f), { title: "Invoice / challan" });
 
@@ -268,25 +271,38 @@ export default function InwardPage() {
   }
 
 
-  /** Stores the required slip now; it is attached to the load on save.
-   *  Unchanged — only where the control sits on the page moved. */
+  /**
+   * The weight proof, picked from the popup SAVE LOAD opens.
+   *
+   * Same upload as before — compress, `/api/uploads`, kind `weighbridge-slip`.
+   * What changed is when it is asked for: only at SAVE LOAD, once the load is
+   * otherwise ready, so a successful upload carries straight on into the save.
+   * The URL is handed to `saveLoad` directly because `slip` state set a line
+   * earlier is not visible until the next render.
+   *
+   * A failed upload, a non-image, or closing the popup all leave the load
+   * unsaved with the cart exactly as it was.
+   */
   async function onSlipPicked(file: File | undefined) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      toast("Slip must be an image");
+      toast("Weight proof must be an image");
       return;
     }
     setSlipBusy(true);
+    let url: string | null = null;
     try {
       const dataUrl = await compressImage(file);
       const res = await sendJson<{ url: string }>("/api/uploads", { dataUrl, kind: "weighbridge-slip" });
+      url = res.url;
       setSlip({ url: res.url, name: file.name });
-      toast("🧾 Slip attached");
+      toast("🧾 Weight proof attached");
     } catch (e) {
-      toast(e instanceof ApiError ? e.message : "Could not upload slip");
+      toast(e instanceof ApiError ? e.message : "Could not upload weight proof");
     } finally {
       setSlipBusy(false);
     }
+    if (url) await saveLoad(url);
   }
 
   /** The invoice / challan photograph. Same endpoint, same validation, own kind. */
@@ -309,7 +325,14 @@ export default function InwardPage() {
     }
   }
 
-  async function saveLoad() {
+  /**
+   * @param slipUrl  The weight proof just uploaded from the popup. Omitted when
+   *                 SAVE LOAD is tapped, in which case the stored `slip` is used
+   *                 — so a save that failed after a successful upload can be
+   *                 retried without asking for the proof again.
+   */
+  async function saveLoad(slipUrl: string | null = slip?.url ?? null) {
+    if (saving || slipBusy) return;
     if (!total) {
       toast("Add at least one material to the cart");
       return;
@@ -325,6 +348,17 @@ export default function InwardPage() {
     }
     if (hasInvoice === true && !invoice) {
       toast("Upload the invoice / challan, or answer No");
+      return;
+    }
+    /**
+     * Weight proof is asked for HERE, last, once everything else about the load
+     * is ready — never as a separate step while the load is still being built.
+     * Nothing is sent until it is attached; closing the popup simply returns to
+     * the load with the cart untouched.
+     */
+    if (!slipUrl) {
+      toast("🧾 Upload the weight proof to save this load");
+      slipPicker.pick();
       return;
     }
     setSaving(true);
@@ -353,7 +387,7 @@ export default function InwardPage() {
         backImageUrl: capture!.backUrl,
         // Every material's photographs, in the order the materials were shot.
         materialImageUrls: [...new Set(Object.values(materialImages).flat())],
-        weighbridgeSlipUrl: slip?.url ?? null,
+        weighbridgeSlipUrl: slipUrl,
       });
       // Succeeded: retire this key so the NEXT load gets a fresh one.
       saveRequestId.current = null;
@@ -527,32 +561,10 @@ export default function InwardPage() {
           }}
         />
 
-        {/* The slip, immediately above the irreversible tap — the same upload
-            that used to sit in the action row, in the place it is reached. */}
-        <div className="pickField" style={{ marginTop: 14 }}>
-          <label>Upload Required Slip</label>
-          <div className={`pickCtl${slip ? " filled" : ""}`} onClick={() => !slipBusy && slipPicker.pick()}>
-            <span className="pickCtlVal">
-              {slipBusy ? "Uploading…" : slip ? "✓ Slip attached" : "Add Weight Proof"}
-            </span>
-            {slip && (
-              <button
-                className="pickClear"
-                title="Remove slip"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSlip(null);
-                }}
-              >
-                ✕
-              </button>
-            )}
-            <span className="pickCaret">›</span>
-          </div>
-        </div>
-
-        <button className="cta" disabled={saving || total === 0} onClick={saveLoad}>
-          {saving ? "SAVING…" : "SAVE LOAD · +50 XP"}
+        {/* No separate weight-proof control: SAVE LOAD asks for it in a popup
+            once the load is ready, and saves as soon as it is attached. */}
+        <button className="cta" disabled={saving || slipBusy || total === 0} onClick={() => void saveLoad()}>
+          {saving ? "SAVING…" : slipBusy ? "UPLOADING PROOF…" : "SAVE LOAD · +50 XP"}
         </button>
         {total > 0 && !(vehicleReady && invoiceAnswered) && (
           <p className="hint" style={{ color: "var(--orange)" }}>

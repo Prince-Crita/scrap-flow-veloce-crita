@@ -355,7 +355,7 @@ export function CameraSheet({
                 <input
                   value={plate}
                   onChange={(e) => setPlate(e.target.value.toUpperCase())}
-                  placeholder={ocrRunning ? "Reading…" : "MH12AB1234"}
+                  placeholder={ocrRunning ? "Reading…" : "Enter vehicle number"}
                 />
                 {confidence > 0 && (
                   <span className="conf" style={{ color: confidence < 0.8 ? "var(--orange)" : "var(--led)" }}>
@@ -388,7 +388,7 @@ export function CameraSheet({
 
             <div className="field">
               <label>Driver Name *</label>
-              <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Ramesh Kumar" />
+              <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="Enter driver name" />
             </div>
             {/*
               Rendered only in the flow that can store it. Outward runs this same
@@ -410,14 +410,14 @@ export function CameraSheet({
                   inputMode="tel"
                   autoComplete="tel"
                   maxLength={15}
-                  placeholder="98765 43210"
+                  placeholder="Enter driver phone"
                 />
               </div>
             )}
             <div className="field">
               <label>Vehicle Type *</label>
               <select value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
-                <option value="">Select type…</option>
+                <option value="">Select vehicle type</option>
                 {VEHICLE_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {t}
