@@ -50,10 +50,21 @@ const MANAGER_CAPS: readonly Capability[] = [
 ];
 
 const OWNER_CAPS: readonly Capability[] = [
-  // Dispatch is deliberately NOT inherited: loading vehicles is the Manager's
-  // job, and the Owner watches it from the Sell page's dispatch status. It also
-  // keeps the Owner's bottom nav at the prototype's four tabs.
-  ...MANAGER_CAPS.filter((c) => c !== "outward.dispatch"),
+  /**
+   * Dispatch IS inherited.
+   *
+   * It used to be withheld — loading vehicles was the Manager's job and the
+   * Owner only watched it from the Sell page. That is no longer the business
+   * rule: the Owner runs the same New / Active / History dispatch workflow from
+   * the Sell page, against the same records and the same dispatch IDs.
+   *
+   * This is a deliberate widening of ONE capability, not a merging of roles.
+   * The Manager still cannot sell, cannot write materials or vendors and cannot
+   * change SKU visibility — `MANAGER_CAPS` is unchanged. The Owner's bottom nav
+   * is unchanged too: the dispatch workflow is reached from Sell, not from a
+   * fifth tab.
+   */
+  ...MANAGER_CAPS,
   "sku.visibility",
   "sell.view",
   "sale.create",
@@ -72,7 +83,7 @@ const ADMIN_ONLY_CAPS: readonly Capability[] = [
 ];
 
 /** ADMIN = every OWNER capability + the platform ones. */
-const ADMIN_CAPS: readonly Capability[] = [...OWNER_CAPS, "outward.dispatch", ...ADMIN_ONLY_CAPS];
+const ADMIN_CAPS: readonly Capability[] = [...OWNER_CAPS, ...ADMIN_ONLY_CAPS];
 
 const BY_ROLE: Record<Role, readonly Capability[]> = {
   MANAGER: MANAGER_CAPS,
@@ -103,13 +114,12 @@ export const ROUTE_RULES: { prefix: string; roles: readonly Role[]; methods?: re
   { prefix: "/api/receivables", roles: ["OWNER", "ADMIN"] },
   { prefix: "/api/sell", roles: ["OWNER", "ADMIN"] },
 
-  // Outward is open to every in-yard role: the Manager dispatches, and the
-  // Owner (or an ADMIN who has entered the yard) must be able to watch and,
-  // in a small yard, load a vehicle themselves.
-  // Dispatch is Manager work; an ADMIN inside a yard can do it too. The Owner
-  // sees dispatch state on the Sell page rather than loading vehicles.
-  { prefix: "/outward", roles: ["MANAGER", "ADMIN"] },
-  { prefix: "/api/outward", roles: ["MANAGER", "ADMIN"] },
+  // Outward is open to every in-yard role. The Manager dispatches from the
+  // Outward tab and the Owner from the Sell page, but it is ONE workflow over
+  // one set of records — so the route rules cannot differ by role either, or
+  // the Owner's dispatch pages would 403 on the API the same pages call.
+  { prefix: "/outward", roles: ["OWNER", "MANAGER", "ADMIN"] },
+  { prefix: "/api/outward", roles: ["OWNER", "MANAGER", "ADMIN"] },
 
   // Vendor + material writes are owner-only; GET stays open for chip lists.
   { prefix: "/api/vendors", roles: ["OWNER", "ADMIN"], methods: ["POST", "PATCH", "PUT", "DELETE"] },

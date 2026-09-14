@@ -335,13 +335,32 @@ async function main() {
   check("a Manager still cannot read sales", mgrSell.status === 403, String(mgrSell.status));
   const mgrQueue = await M.req("/api/outward/queue");
   check("a Manager CAN read the outward queue", mgrQueue.status === 200, String(mgrQueue.status));
-  // Dispatch is Manager work. The Owner is deliberately kept out of the outward
-  // queue — they watch dispatch from the Sell page's status view instead, which
-  // also keeps their bottom nav at the prototype's four tabs.
+  /**
+   * The Owner CAN dispatch.
+   *
+   * This used to assert the opposite. The business rule changed: the Owner now
+   * runs the same New / Active / History dispatch workflow from the Sell page,
+   * against the same records and the same dispatch IDs as the Supervisor. These
+   * two assertions were the last thing encoding the old rule.
+   *
+   * The boundary that matters is still asserted, immediately above: a Manager
+   * cannot read sales. One capability widened; the roles did not merge.
+   */
   const ownerQueue = await O.req("/api/outward/queue");
-  check("an Owner is NOT given the dispatch queue", ownerQueue.status === 403, String(ownerQueue.status));
+  check("an Owner CAN read the dispatch queue", ownerQueue.status === 200, String(ownerQueue.status));
+  /**
+   * This allocation was fully dispatched a few assertions ago, so the right
+   * answer for EVERY role is 422 "already dispatched" — never 403. That is the
+   * point being asserted: the Owner now meets the same business rule the
+   * Manager does, instead of being stopped at the door by a permission.
+   */
   const ownerDispatch = await O.json("/api/outward/dispatch", { lines: [{ saleId: saleRow.id, kg: 1 }] });
-  check("an Owner cannot dispatch", ownerDispatch.status === 403, String(ownerDispatch.status));
+  check("an Owner is no longer forbidden from dispatching", ownerDispatch.status !== 403, String(ownerDispatch.status));
+  check(
+    "  …they get the same business answer a Manager gets",
+    ownerDispatch.status === done.status,
+    `owner=${ownerDispatch.status} manager=${done.status}`
+  );
 
   // ── Legacy sales are untouched ───────────────────────────────────────────
   console.log("\nLegacy sales:");

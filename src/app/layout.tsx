@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
+import { auth } from "@/backend/auth/auth";
 import { Poppins, JetBrains_Mono } from "next/font/google";
 import "@/frontend/styles/globals.css";
 import { Providers } from "@/frontend/components/providers";
@@ -78,12 +79,21 @@ export const viewport: Viewport = {
  * existed: not one admin rule can match.
  */
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const shell = (await headers()).get("x-sf-shell");
+  /**
+   * Both reads are already required for the first byte, and neither touches the
+   * database: the shell comes from a middleware header and `auth()` verifies the
+   * session JWT. Resolving the session HERE and handing it to `SessionProvider`
+   * is what stops the client fetching `/api/auth/session` again on mount.
+   */
+  const [shell, session] = await Promise.all([
+    headers().then((h) => h.get("x-sf-shell")),
+    auth(),
+  ]);
 
   return (
     <html lang="en" className={`${poppins.variable} ${jetbrains.variable}`}>
       <body data-shell={shell === "admin" ? "admin" : undefined}>
-        <Providers>{children}</Providers>
+        <Providers session={session}>{children}</Providers>
       </body>
     </html>
   );

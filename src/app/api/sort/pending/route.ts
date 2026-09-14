@@ -1,5 +1,6 @@
 import { requireYard, ok } from "@/backend/http/api";
 import { loadRef } from "@/shared/load-ref";
+import { requiresSort } from "@/shared/material-kind";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,19 @@ export async function GET() {
         });
   const sortedByLoadSku = new Map(runs.map((r) => [`${r.sourceLoadId}::${r.sourceSkuId}`, r._sum.totalKg ?? 0]));
 
+  /**
+   * Which SKUs are segregation SOURCES. `requiresSort` is the one place the
+   * mixed/direct rule is written down (src/shared/material-kind.ts).
+   *
+   * This is the authoritative filter, not a cosmetic one: a line booked against
+   * a DIRECT sub-material has nothing to be segregated into, so it is not a
+   * candidate — it never enters this list, rather than being hidden from a list
+   * it belongs on. Inward already writes such lines as SEGREGATED, so the status
+   * filter below would exclude them anyway; checking the SKU as well means the
+   * rule holds even for a row written before that was true.
+   */
+  const sortableSkuIds = new Set(skus.filter(requiresSort).map((s) => s.id));
+
   // Every RECEIVED load appears in the Sort selector. Loads whose material has
   // no segregation sub-SKUs yet are shown as not-yet-sortable rather than hidden
   // (root cause of the "load missing from Sort after adding a new material" bug).
@@ -64,7 +78,7 @@ export async function GET() {
     const pending =
       l.lines.length > 0
         ? l.lines
-            .filter((ln) => ln.status === "RECEIVED")
+            .filter((ln) => ln.status === "RECEIVED" && sortableSkuIds.has(ln.skuId))
             .map((ln) => ({
               lineId: ln.id as string | null,
               skuId: ln.skuId as string | null,

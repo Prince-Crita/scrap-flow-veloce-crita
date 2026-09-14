@@ -80,3 +80,53 @@ export function loadRefDate(createdAt: Date | string): string {
     year: "numeric",
   });
 }
+
+/**
+ * The user-facing reference for an outward dispatch: `TY1-D0007`.
+ *
+ * Exactly the same architecture as `loadRef` above, and for the same reasons —
+ * `Yard.shortCode` is globally `@unique`, and the sequence comes from the
+ * per-yard atomic `dispatch` counter (`{yardId}:dispatch`) incremented inside
+ * the creating transaction, with `@@unique([yardId, dispatchNumber])` as the
+ * database backstop. So two dispatches differ in either the yard segment or the
+ * sequence, and two concurrent creates in one yard cannot be handed the same
+ * number.
+ *
+ * The `D` matters: without it `TY1-0007` would mean both inward load 7 and
+ * dispatch 7 in the same yard. It is one character, and it makes the reference
+ * say which side of the yard it belongs to.
+ *
+ * Derived, never stored — no second identifier to drift out of step with the
+ * row, and it applies retroactively to every dispatch ever saved.
+ * `OutwardLoad.id` (a cuid) remains the internal identity that every relation
+ * points at; this is only what a person says out loud.
+ */
+export function dispatchRef({ shortCode, dispatchNumber }: { shortCode: string; dispatchNumber: string }): string {
+  const seq = lotSequence(dispatchNumber);
+  const tail = seq == null ? String(dispatchNumber ?? "").toUpperCase() : `D${String(seq).padStart(4, "0")}`;
+  return `${shortCode}-${tail}`;
+}
+
+/**
+ * The same day, with the time the load was actually saved — "21 Aug 2026, 01:39 pm".
+ *
+ * Two loads booked off the same vehicle, for the same material, by the same
+ * person, on the same day are told apart by nothing else in the Sort selector's
+ * label, so the date alone was not enough to pick the right one.
+ *
+ * It is `InwardLoad.createdAt` and nothing else — the identical field, from the
+ * identical row, that "Recent Load Details" renders on the Inward page, so one
+ * load reads the same everywhere. No new column, no second clock, and never the
+ * browser's current time. Same locale and same fixed zone as `loadRefDate`, so
+ * the two never disagree about which day a load belongs to.
+ */
+export function loadRefDateTime(createdAt: Date | string): string {
+  return new Date(createdAt).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

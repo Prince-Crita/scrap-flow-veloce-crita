@@ -5,6 +5,7 @@ import { nextCounter, formatLot } from "@/backend/services/counters";
 import { publishMany } from "@/backend/realtime/realtime";
 import { loadRef } from "@/shared/load-ref";
 import { ensureShortCode } from "@/backend/services/yard-short-code";
+import { initialLineStatus, initialLoadStatus } from "@/shared/material-kind";
 
 export const dynamic = "force-dynamic";
 
@@ -134,12 +135,30 @@ export async function POST(req: Request) {
     }
   }
 
-  // Every cart item must name a real mixed bucket in THIS yard. One query for
-  // all of them; the scoped client already constrains it to the yard.
+  /**
+   * Every cart item must name a real, bookable material in THIS yard. One query
+   * for all of them; the scoped client already constrains it to the yard, so a
+   * SKU belonging to another yard simply does not come back and the count check
+   * below rejects the request.
+   *
+   * BOTH kinds are bookable now:
+   *
+   *   • a MIXED bucket  — a vehicle of unsorted material, which Sort segregates;
+   *   • a DIRECT sub-material — a vehicle of one finished grade, which needs no
+   *     segregation and goes straight into that sub-material's stock.
+   *
+   * What is refused is a RETIRED material: `visible: false` is how a sort type
+   * is taken out of service, and booking new stock into one would resurrect a
+   * category the yard has deliberately stopped using.
+   */
   const skuIds = [...new Set(cart.map((c) => c.skuId))];
   const buckets = await prisma.sku.findMany({ where: { id: { in: skuIds } } });
-  if (buckets.length !== skuIds.length || buckets.some((b) => !b.isMixedBucket)) {
+  if (buckets.length !== skuIds.length) {
     return fail("BAD_MATERIAL", "Invalid inward material", 422);
+  }
+  const retired = buckets.find((b) => !b.visible);
+  if (retired) {
+    return fail("BAD_MATERIAL", `"${retired.name}" is no longer available for inward`, 422);
   }
   const bucketById = new Map(buckets.map((b) => [b.id, b]));
 
@@ -156,6 +175,13 @@ export async function POST(req: Request) {
       materialId: b.materialId,
       materialLabel: b.name,
       quantityKg: cart.filter((c) => c.skuId === skuId).reduce((a, c) => a + c.kg, 0),
+      /**
+       * Mixed → RECEIVED, so Sort picks it up. Direct → SEGREGATED, because a
+       * finished grade arrives with nothing left to segregate. See
+       * src/shared/material-kind.ts for why this reuses the existing enum
+       * rather than adding a third value.
+       */
+      status: initialLineStatus(b),
     };
   });
 
@@ -197,7 +223,10 @@ export async function POST(req: Request) {
         invoiceUrl,
         weighbridgeSlipUrl: d.weighbridgeSlipUrl ?? null,
         capturedById: guard.user.id,
-        status: "RECEIVED",
+        // RECEIVED only while some line still owes segregation. A vehicle of
+        // nothing but direct sub-materials is finished on arrival, which is
+        // what keeps it out of every "pending sort" counter in the app.
+        status: initialLoadStatus(lines.map((l) => bucketById.get(l.skuId)!)),
         materialImages: {
           create: (d.materialImageUrls ?? []).map((url) => ({ yardId, url })),
         },
@@ -216,7 +245,7 @@ export async function POST(req: Request) {
           materialId: l.materialId,
           materialLabel: l.materialLabel,
           quantityKg: l.quantityKg,
-          status: "RECEIVED",
+          status: l.status,
         },
       });
       lineIdBySku.set(l.skuId, line.id);
@@ -227,7 +256,9 @@ export async function POST(req: Request) {
         update: { quantityKg: { increment: l.quantityKg } },
       });
 
-      // Traceable batch: this mixed stock is attributed to the vendor/vehicle/load.
+      // Traceable batch, attributed to the vendor/vehicle/load. Identical for
+      // both kinds: a mixed batch is consumed by segregation, a direct batch by
+      // a sale — the traceability chain back to the vendor is the same one.
       await tx.inventoryLot.create({
         data: {
           yardId,

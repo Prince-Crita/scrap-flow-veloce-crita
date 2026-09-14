@@ -59,11 +59,27 @@ export const CHANNEL_QUERY_KEYS: Record<YardChannel, string[][]> = {
   sales: [["sales"], ["sellReady"], ["stock"], ["outwardQueue"], ["dispatchStatus"]],
   // A dispatch moves physical stock AND satisfies an allocation, so it
   // refreshes the Manager queue, the Owner dispatch view and stock alike.
-  outward: [["outwardQueue"], ["dispatchStatus"], ["stock"], ["sales"], ["sellReady"], ["yardSummary"]],
+  //
+  // `dispatches` is the Supervisor workflow's list — Outward's "Find a dispatch"
+  // selector, the Active Dispatch tabs and Dispatch History all read it (see
+  // `useDispatches`). Without it here NOTHING ever invalidated that key:
+  // `refetchOnMount` only refetches an invalidated query, so completing a
+  // dispatch and landing back on Outward served the list cached from before the
+  // completion — the dispatch still reading In Transit, or missing entirely if
+  // it was created after that cache entry was filled. One entry, matched by
+  // prefix, covers all four filters.
+  // `dispatch` (singular) is ONE dispatch's detail — the key every workflow
+  // step reads (`["dispatch", id]`). Invalidation matches by prefix, so this
+  // one entry covers every open step page. Without it a step could advance the
+  // record and the next screen would still render the version it had cached,
+  // which is exactly how a status goes stale mid-workflow.
+  outward: [["dispatches"], ["dispatch"], ["outwardQueue"], ["dispatchStatus"], ["stock"], ["sales"], ["sellReady"], ["yardSummary"]],
   vendors: [["vendors"], ["vendorsAll"]],
   materials: [["materials"], ["materialsAll"], ["stock"], ["sortTypesAll"]],
   xp: [],
-  yard: [["stock"], ["sortPending"], ["sellReady"], ["sales"], ["vendors"], ["materials"], ["outwardQueue"], ["dispatchStatus"], ["yardSummary"]],
+  // The catch-all: it already lists every other view's key, so omitting
+  // `dispatches` would leave the same stale list behind a yard-level change.
+  yard: [["stock"], ["sortPending"], ["sellReady"], ["sales"], ["vendors"], ["materials"], ["outwardQueue"], ["dispatchStatus"], ["dispatches"], ["dispatch"], ["yardSummary"]],
 };
 
 type Listener = (event: YardEvent) => void;

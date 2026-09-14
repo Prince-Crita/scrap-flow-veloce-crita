@@ -25,6 +25,24 @@ const basePath = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").replace(/\/$/, "");
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  /**
+   * No Next.js dev-tools indicator inside the app.
+   *
+   * It was showing as a white box over the header. That box was the dev-tools
+   * button (`#next-logo`, `data-error=false`) with no styling: the CSP in
+   * `src/backend/http/csp.ts` keeps `<style>` elements nonce-only on purpose,
+   * and the indicator injects its own `<style>` tags without that nonce, so the
+   * browser refused them and the button fell back to a plain unstyled box in
+   * normal page flow.
+   *
+   * The CSP is not relaxed to make room for it — `style-src` staying nonce-only
+   * is deliberate and covered by tests/csp.test.ts. The indicator is simply not
+   * rendered. This hides no error: runtime errors still throw, still reach error
+   * boundaries and still log to the browser console and the dev server. A
+   * production build never includes dev tools, so this only changes development.
+   */
+  devIndicators: false,
+
   ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   ...(process.env.NEXT_OUTPUT_STANDALONE === "1" ? { output: "standalone" as const } : {}),
   experimental: {

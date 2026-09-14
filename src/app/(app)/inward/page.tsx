@@ -4,8 +4,7 @@ import { useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
 import { getJson, sendJson, newRequestId, ApiError } from "@/frontend/lib/api-client";
-import { fmt, fmtInr } from "@/shared/format";
-import { UNITS, toKilograms, type UnitCode } from "@/shared/units";
+import { fmt } from "@/shared/format";
 import { compressImage } from "@/frontend/lib/image";
 import { useUI } from "@/frontend/components/ui-provider";
 import { PhonePortal } from "@/frontend/components/phone-portal";
@@ -14,29 +13,28 @@ import { CameraSheet, type CaptureData } from "@/frontend/components/camera-shee
 import { VendorSheet, type VendorLite } from "@/frontend/components/vendor-sheet";
 import { MaterialSheet } from "@/frontend/components/material-sheet";
 import { RecentLoads } from "@/frontend/components/recent-loads";
+import {
+  MaterialEntry,
+  type CartItem,
+  type MaterialEntryHandle,
+} from "@/frontend/components/material-entry";
 import { useInvalidateChannels } from "@/frontend/components/realtime/provider";
 
-type Material = { id: string; code: string; name: string; materialId?: string | null; active?: boolean };
-
 /**
- * One committed cart line: a material, its weight in kilograms, and the rate it
- * was bought at. The same material may appear several times at different rates —
- * see `addToCart` for why these are never merged in the UI.
+ * A bookable material. `isMixedBucket` decides the workflow the load enters —
+ * mixed goes to Sort, direct goes straight to that sub-material's stock — and
+ * comes from the material configuration, never from the name.
  */
-type CartItem = { key: string; skuId: string; label: string; kg: number; unit: UnitCode; ratePerKg: number };
-
-/** Largest rate the API will accept; mirrored here so the field cannot exceed it. */
-const MAX_RATE = 1_000_000;
-
-/**
- * Reads a typed rate. Blank, malformed or negative all mean zero rather than
- * NaN — clearing the field to start again must not poison the cart total.
- */
-function parseRate(raw: string): number {
-  const n = Number.parseFloat(raw.replace(/,/g, ""));
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.min(MAX_RATE, Math.round(n * 100) / 100);
-}
+type Material = {
+  id: string;
+  code: string;
+  name: string;
+  icon?: string | null;
+  materialId?: string | null;
+  materialName?: string | null;
+  isMixedBucket?: boolean;
+  active?: boolean;
+};
 
 /**
  * Tap-to-open list picker, used for both Vendor and Material.
@@ -155,19 +153,11 @@ export default function InwardPage() {
   const [invoice, setInvoice] = useState<{ url: string; name: string } | null>(null);
   const [invoiceBusy, setInvoiceBusy] = useState(false);
   const [materialId, setMaterialId] = useState<string | null>(null);
-  const [led, setLed] = useState("0");
-  const [unit, setUnit] = useState<UnitCode>("KG");
-  const [cart, setCart] = useState<CartItem[]>([]);
   /**
-   * The weight confirmed by ADD TO LOAD but not yet committed to the cart.
-   *
-   * This is the whole point of the two-step entry: the material, the weight and
-   * the rate all stay editable while it sits here, and only ADD TO CART turns it
-   * into a cart line. Kilograms, like everything downstream of the keypad.
+   * The committed cart. Owned here rather than by the shared entry, because
+   * SAVE LOAD is what consumes it and the entry is a control, not the screen.
    */
-  const [pendingKg, setPendingKg] = useState<number | null>(null);
-  const [pendingUnit, setPendingUnit] = useState<UnitCode>("KG");
-  const [rate, setRate] = useState("0");
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [capture, setCapture] = useState<CaptureData | null>(null);
   /**
    * Material images, keyed by the SKU they were taken for.
@@ -190,20 +180,21 @@ export default function InwardPage() {
    * Images sheet and parks the reading here until that sheet is completed.
    * Cancelling the sheet drops it, exactly as failing the old check did.
    */
-  const [awaitingImages, setAwaitingImages] = useState<{ kg: number; unit: UnitCode } | null>(null);
+  /**
+   * The shared entry's handle. `release()` lets a weight parked by the image
+   * gate through once the photographs are attached; `discard()` drops it when
+   * the sheet is closed without any. Replaces the page's own copy of that
+   * state — the parked reading belongs to the entry, not to this screen.
+   */
+  const entryRef = useRef<MaterialEntryHandle | null>(null);
   const [vendorOpen, setVendorOpen] = useState(false);
   const [materialOpen, setMaterialOpen] = useState(false);
-  /** The two list pickers, and the calculator overlay. UI state only. */
+  /** The vendor picker. The material picker now lives inside the shared entry. */
   const [vendorPick, setVendorPick] = useState(false);
-  const [materialPick, setMaterialPick] = useState(false);
-  const [calcOpen, setCalcOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [slip, setSlip] = useState<{ url: string; name: string } | null>(null);
   const [slipBusy, setSlipBusy] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
-  const [imagePrompt, setImagePrompt] = useState(false);
-  const promptTmr = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   /** Camera or gallery for the required slip; the upload itself is unchanged. */
   const slipPicker = usePhotoSource((f) => void onSlipPicked(f), { title: "Upload required slip" });
   /** Same control, same endpoint, for the vendor's invoice / challan. */
@@ -264,132 +255,18 @@ export default function InwardPage() {
   const currentImages = activeMaterialId ? (materialImages[activeMaterialId] ?? []) : [];
   const invoiceAnswered = hasInvoice === false || (hasInvoice === true && !!invoice);
 
-  function num(n: number) {
-    setLed((l) => (l.length < 6 ? (l === "0" ? String(n) : l + n) : l));
-  }
-  function clr() {
-    setLed("0");
-  }
-  function back() {
-    setLed((l) => (l.length > 1 ? l.slice(0, -1) : "0"));
-  }
-
   /**
-   * "Upload Material images first."
+   * The material-image gate, kept here because the requirement is Inward's.
    *
-   * Fires the same tip and the same camera-key glow the vehicle check used to,
-   * because the gate moved rather than changed: it is now the material images
-   * for the material being weighed, checked per material type so a second
-   * weighment of an already-photographed material passes straight through.
+   * The shared entry parks the reading and calls this; completing the sheet
+   * releases it, closing the sheet without images discards it. Same rule as
+   * before — checked per material type, so a second weighment of an
+   * already-photographed material passes straight through.
    */
   function promptMaterialImages() {
-    setImagePrompt(true);
-    if (promptTmr.current) clearTimeout(promptTmr.current);
-    promptTmr.current = setTimeout(() => setImagePrompt(false), 3200);
     toast("📷 Upload Material images first");
   }
 
-  /**
-   * The material and the reading itself, in the order the operator would fix
-   * them. Returns the kilograms, or null after complaining. The material-image
-   * requirement is checked by the caller, because ADD TO LOAD now answers it by
-   * opening the images sheet rather than by refusing.
-   */
-  function readyKg(reading: number): number | null {
-    if (!activeMaterialId || !activeMaterial) {
-      toast("Select a material first");
-      return null;
-    }
-    if (!reading) {
-      toast("Enter a weight first");
-      return null;
-    }
-    const kg = toKilograms(reading, unit);
-    if (kg <= 0) {
-      toast("Weight is too small to record");
-      return null;
-    }
-    return kg;
-  }
-
-  /** Hands a confirmed reading to the entry card and closes the calculator. */
-  function acceptWeight(kg: number, entryUnit: UnitCode) {
-    setPendingKg(kg);
-    setPendingUnit(entryUnit);
-    setLed("0");
-    // The calculator is a tool, not the screen: confirming a value hands the
-    // weight back to the entry card and gets out of the way.
-    setCalcOpen(false);
-    toast(`⚖️ ${activeMaterial?.name ?? "Material"} · ${fmt(kg)} kg · set the rate, then ADD TO CART`);
-  }
-
-  /**
-   * ADD TO LOAD — hands the reading to the entry card, and stops there.
-   *
-   * Nothing reaches the cart yet: the rate has not been entered, and the
-   * material and weight are both still editable. ADD TO CART is what commits.
-   *
-   * The material's images are still mandatory, and this is now where they are
-   * asked for: with none on file for the selected material, the reading is
-   * parked and the existing Material Images sheet opens. Only completing that
-   * sheet lets the weight through — the gate moved, it did not soften.
-   */
-  function onAddWt() {
-    const kg = readyKg(Number(led));
-    if (kg == null) return;
-    if (currentImages.length === 0) {
-      setAwaitingImages({ kg, unit });
-      setMatCamOpen(true);
-      return;
-    }
-    acceptWeight(kg, unit);
-  }
-
-  /**
-   * ADD TO CART — commits the pending material, weight and rate as one line.
-   *
-   * Deliberately appended, never merged into a matching line. The same material
-   * bought twice off one vehicle at two different rates is two purchases, and
-   * collapsing them here would destroy the distinction the operator just made.
-   * The API still groups by SKU for stock and sorting; the rate survives that
-   * grouping on the weighment rows.
-   */
-  function addToCart() {
-    if (pendingKg == null) {
-      toast("Enter a weight first");
-      return;
-    }
-    // Re-checked, not assumed: the material can be changed while an entry is
-    // pending, and the images have to belong to whatever is being added.
-    if (!activeMaterialId || !activeMaterial) {
-      toast("Select a material first");
-      return;
-    }
-    if (currentImages.length === 0) {
-      promptMaterialImages();
-      return;
-    }
-    const ratePerKg = parseRate(rate);
-    setCart((c) => [
-      ...c,
-      {
-        key: `${Date.now()}-${c.length}`,
-        skuId: activeMaterialId,
-        label: activeMaterial.name,
-        kg: pendingKg,
-        unit: pendingUnit,
-        ratePerKg,
-      },
-    ]);
-    setPendingKg(null);
-    setRate("0");
-    toast(`🛒 ${activeMaterial.name} · ${fmt(pendingKg)} kg @ ${fmtInr(ratePerKg)}/kg added · +5 XP`);
-    void bump(5);
-  }
-
-  function removeCartItem(key: string) {
-    setCart((c) => c.filter((i) => i.key !== key));
-  }
 
   /** Stores the required slip now; it is attached to the load on save.
    *  Unchanged — only where the control sits on the page moved. */
@@ -487,9 +364,8 @@ export default function InwardPage() {
       setInvoiceNo("");
       setHasInvoice(null);
       setMaterialImages({});
-      setPendingKg(null);
-      setRate("0");
-      setLed("0");
+      // The weight/rate/display belong to the shared entry now.
+      entryRef.current?.reset();
       // Exactly the channels POST /api/inward/loads publishes.
       invalidateChannels("inward", "stock", "sort");
       await bump(50);
@@ -622,172 +498,34 @@ export default function InwardPage() {
         </div>
 
         {/*
-          One row, always: Material → Weight → Rate. That order is the order a
-          purchase is actually agreed in, so the row reads as the workflow rather
-          than as three unrelated buttons — which is why it stays a row at every
-          width instead of wrapping underneath on a narrow phone.
+          Material → Weight → Rate → Cart is the SHARED `MaterialEntry`
+          component — the same one the Outward dispatch workflow renders. It
+          used to be written out here; extracting it is what keeps one
+          calculator, one cart and one set of rules in the application.
 
-          The slip used to occupy the third cell. It has moved to the bottom of
-          this card, immediately above SAVE LOAD, where it is actually used.
-
-          All three cells are one control shell (`.actCell`): same height, same
-          label, same inset value box, same padding, equal thirds. Only what sits
-          inside the box differs — a chosen value on the first, a number and its
-          unit in the middle, a currency field on the last.
+          What stays Inward's is the gate: a material may not be weighed until
+          it has been photographed. That is passed in rather than built in, so
+          Outward (which has no such requirement) is not carrying a flag it
+          would have to switch off.
         */}
-        <div className="actRow">
-          <button className="actCell" onClick={() => setMaterialPick(true)}>
-            <span className="actLbl">Material</span>
-            <span className="actInset">
-              <b className="actVal">{activeMaterial ? activeMaterial.name : "Select Material"}</b>
-            </span>
-          </button>
-
-          <div
-            className="actCell wt"
-            role="button"
-            tabIndex={0}
-            aria-label="Weight — opens the calculator"
-            onClick={() => setCalcOpen(true)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setCalcOpen(true);
-              }
-            }}
-          >
-            <span className="actLbl">Weight</span>
-            <span className="actInset">
-              <span className={`wtNum${pendingKg ? "" : " empty"}`}>{fmt(pendingKg ?? 0)}</span>
-              <span className="wtKg">kg</span>
-            </span>
-          </div>
-
-          {/* Typed, not picked — so the value box holds a field rather than a
-              caption. `inputMode="decimal"` is what opens the numeric keyboard
-              on the phones this is used on. */}
-          <div className="actCell rate">
-            <span className="actLbl">Rate · ₹/kg</span>
-            <span className="actInset">
-              <span className="rateCur">₹</span>
-              <input
-                className="rateInput"
-                type="text"
-                inputMode="decimal"
-                aria-label="Rate per kilogram in rupees"
-                value={rate}
-                onFocus={(e) => e.currentTarget.select()}
-                onChange={(e) => {
-                  // Digits and a single decimal point. Anything else never
-                  // reaches state, so the field cannot hold a malformed value.
-                  const cleaned = e.target.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
-                  setRate(cleaned);
-                }}
-                onBlur={() => setRate(String(parseRate(rate)))}
-              />
-            </span>
-          </div>
-        </div>
-
-        {/* The pending entry: everything above it is still editable until this
-            is committed. Only shown once a weight has been confirmed. */}
-        {pendingKg != null && (
-          <div className="pendCard">
-            <div className="pendHead">Ready to add</div>
-            <div className="pendLine">
-              <span>Material</span>
-              <b>{activeMaterial ? activeMaterial.name : "Select Material"}</b>
-            </div>
-            <div className="pendLine">
-              <span>Weight</span>
-              <b>
-                {fmt(pendingKg)} kg
-                {pendingUnit !== "KG" && <em className="entryUnit"> · entered in {pendingUnit}</em>}
-              </b>
-            </div>
-            <div className="pendLine">
-              <span>Rate</span>
-              <b>{fmtInr(parseRate(rate))} / kg</b>
-            </div>
-            <div className="pendLine">
-              <span>Amount</span>
-              <b>{fmtInr(pendingKg * parseRate(rate))}</b>
-            </div>
-            <button className="cta" onClick={addToCart}>
-              ADD TO CART
-            </button>
-            <button className="cta ghost" onClick={() => setPendingKg(null)}>
-              Discard entry
-            </button>
-          </div>
-        )}
-
-        {/*
-          Current load, restored above SAVE LOAD.
-
-          One row per cart line rather than one per material, because each row is
-          individually removable and because two purchases of the same material
-          at different rates are two lines, not one.
-
-          Each row is stacked rather than dense. The material, its weight and its
-          rate used to compete for one 390px line with the remove button, which
-          truncated the name and left every figure in the row's muted metadata
-          size. The name now reads as the heading it is, with the figures under
-          it. `.entry` itself is untouched — Outward, Recent Loads and Dispatch
-          Status all share it — `.cartRow` is a modifier only this list uses.
-        */}
-        <div className="loadSummary">
-          <div className="loadSummaryTop">
-            <div className="loadSummaryHead">Current Load</div>
-            {cart.length > 0 && (
-              <span className="loadSummaryCount">
-                {cart.length} {cart.length === 1 ? "entry" : "entries"}
-              </span>
-            )}
-          </div>
-          <p className="loadSummarySub">Materials added to this load</p>
-          {cart.length === 0 ? (
-            <p className="loadSummaryEmpty">No materials added yet</p>
-          ) : (
-            <div className="entries">
-              {cart.map((item) => (
-                <div key={item.key} className="entry cartRow">
-                  <span className="cartMain">
-                    <b className="cartName">{item.label}</b>
-                    {/* Weight and rate read together as one measurement; the
-                        line's money sits in its own column so it stays aligned
-                        down the list whatever the digits before it do. */}
-                    <span className="cartFigures">
-                      <span className="cartMeasure">
-                        <b className="cartKg">{fmt(item.kg)} kg</b>
-                        <em className="cartRate">@ {fmtInr(item.ratePerKg)}/kg</em>
-                      </span>
-                      <em className="cartAmt">{fmtInr(item.kg * item.ratePerKg)}</em>
-                    </span>
-                  </span>
-                  <button
-                    className="entryX"
-                    aria-label={`Remove ${item.label}`}
-                    title="Remove from load"
-                    onClick={() => removeCartItem(item.key)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="totalRow">
-            <span>TOTAL LOAD</span>
-            <b>{fmt(total)} kg</b>
-          </div>
-          {cartValue > 0 && (
-            <div className="totalRow">
-              <span>TOTAL VALUE</span>
-              <b>{fmtInr(cartValue)}</b>
-            </div>
-          )}
-        </div>
+        <MaterialEntry
+          materials={materials}
+          cart={cart}
+          onCartChange={setCart}
+          activeMaterialId={activeMaterialId}
+          onPickMaterial={setMaterialId}
+          onAddMaterial={isOwner ? () => setMaterialOpen(true) : undefined}
+          onDeleteMaterial={isOwner ? (m) => void deleteMaterial(m as Material) : undefined}
+          handleRef={entryRef}
+          gate={{
+            message: "Upload Material images first",
+            blocked: (skuId) => (materialImages[skuId] ?? []).length === 0,
+            onBlocked: (skuId) => {
+              setMaterialId(skuId);
+              setMatCamOpen(true);
+            },
+          }}
+        />
 
         {/* The slip, immediately above the irreversible tap — the same upload
             that used to sit in the action row, in the place it is reached. */}
@@ -834,103 +572,6 @@ export default function InwardPage() {
       </button>
       {recentOpen && <RecentLoads asModal onClose={() => setRecentOpen(false)} />}
 
-      {/* ---- Calculator overlay: the existing LED + keypad, unchanged ---- */}
-      {calcOpen && (
-        <PhonePortal>
-          <div className="sheetWrap" onClick={() => setCalcOpen(false)}>
-            <div className="sheet calcSheet" onClick={(e) => e.stopPropagation()}>
-              <div className="sheetHandle" />
-              {/* An additional way out, nothing more: the header is unchanged and
-                  this only closes — the reading is never committed by it. */}
-              <button className="sheetClose" aria-label="Close calculator" title="Close" onClick={() => setCalcOpen(false)}>
-                ✕
-              </button>
-              <div className="sheetTitle">Weight Entry</div>
-              <div className="sheetStep">
-                {activeMaterial ? activeMaterial.name : "No material selected"} · ADD TO LOAD hands this to the entry
-                card
-              </div>
-
-              {/* LED */}
-              <div className="led">
-                <div className="val">{fmt(Number(led))}</div>
-                <div className="unit">
-                  <span>SCALE · MANUAL</span>
-                  {/* The unit is a display/entry concern only: the reading is converted
-                      to kilograms the moment it is added to the cart. */}
-                  <select
-                    className="unitSel"
-                    value={unit}
-                    onChange={(e) => setUnit(e.target.value as UnitCode)}
-                    aria-label="Weight unit"
-                  >
-                    {UNITS.map((u) => (
-                      <option key={u.code} value={u.code}>
-                        {u.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {currentImages.length === 0 && (
-                <p className="hint" style={{ marginTop: 10, color: "var(--orange)" }}>
-                  📷 ADD TO LOAD will ask for {activeMaterial ? activeMaterial.name : "the material"} images before the
-                  weight is accepted.
-                </p>
-              )}
-
-              {/* Keypad */}
-              <div className="pad">
-                <button className="key" onClick={() => num(7)}>7</button>
-                <button className="key" onClick={() => num(8)}>8</button>
-                <button className="key" onClick={() => num(9)}>9</button>
-                <button className="key fn" onClick={clr}>CLR</button>
-                <button className="key" onClick={() => num(4)}>4</button>
-                <button className="key" onClick={() => num(5)}>5</button>
-                <button className="key" onClick={() => num(6)}>6</button>
-                <button className="key fn" onClick={back}>⌫</button>
-                <button className="key" onClick={() => num(1)}>1</button>
-                <button className="key" onClick={() => num(2)}>2</button>
-                <button className="key" onClick={() => num(3)}>3</button>
-                {/* No longer drawn locked: this key IS the way to the material
-                    images now, so showing it disabled would point nowhere. */}
-                <button className="key add" onClick={onAddWt}>ADD<br />TO LOAD</button>
-                {/* The camera key that used to sit beside it has gone; 0 takes
-                    the three columns the bottom row actually has. */}
-                <button className="key zero" onClick={() => num(0)}>0</button>
-                {imagePrompt && <div className="captureTip">Upload Material images first</div>}
-              </div>
-
-              <div className="totalRow">
-                <span>TOTAL LOAD</span>
-                <b>{fmt(total)} kg</b>
-              </div>
-
-              {/*
-                Done finishes the entry; it does not make one. With a reading
-                still on the display and nothing handed over, it says so and
-                stays open, because the instruction it gives — tap ADD TO LOAD —
-                is only actionable while the keypad is on screen. The ✕ above and
-                the backdrop both still close outright, without adding anything.
-              */}
-              <button
-                className="cta ghost"
-                onClick={() => {
-                  if (Number(led) > 0) {
-                    toast("Tap Add to Load to add the weight.");
-                    return;
-                  }
-                  setCalcOpen(false);
-                }}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </PhonePortal>
-      )}
-
       {vendorPick && (
         <PickerSheet
           title="Select Vendor"
@@ -953,26 +594,6 @@ export default function InwardPage() {
         />
       )}
 
-      {materialPick && (
-        <PickerSheet
-          title="Select Material"
-          subtitle="The material this weighment is booked against"
-          options={materials}
-          activeId={activeMaterialId}
-          onPick={setMaterialId}
-          onClose={() => setMaterialPick(false)}
-          onDelete={isOwner ? (m) => void deleteMaterial(m) : undefined}
-          addLabel={isOwner ? "+ Add Material" : undefined}
-          onAdd={
-            isOwner
-              ? () => {
-                  setMaterialPick(false);
-                  setMaterialOpen(true);
-                }
-              : undefined
-          }
-        />
-      )}
 
       {/* Vehicle: image → ANPR → number → confirm. The SAME sheet and the SAME
           /api/ocr call as before; only the material step is not entered. */}
@@ -1003,21 +624,20 @@ export default function InwardPage() {
           initialMaterialUrls={currentImages}
           onClose={() => {
             setMatCamOpen(false);
-            if (awaitingImages) {
-              setAwaitingImages(null);
+            // Only when the requirement is still unmet: reopening the sheet on
+            // an already-photographed material and closing it must not nag.
+            if (currentImages.length === 0) {
+              entryRef.current?.discard();
               promptMaterialImages();
             }
           }}
           onComplete={(data) => {
             setMaterialImages((m) => ({ ...m, [activeMaterialId]: data.materialUrls }));
             setMatCamOpen(false);
-            setImagePrompt(false);
             toast(`✓ ${data.materialUrls.length} image(s) attached to ${activeMaterial?.name ?? "material"}`);
-            if (awaitingImages) {
-              const held = awaitingImages;
-              setAwaitingImages(null);
-              acceptWeight(held.kg, held.unit);
-            }
+            // The gate is satisfied: let the weight the operator already
+            // entered through to the entry card.
+            entryRef.current?.release();
           }}
         />
       )}

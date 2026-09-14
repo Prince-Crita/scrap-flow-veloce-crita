@@ -11,7 +11,7 @@ import { useUI } from "@/frontend/components/ui-provider";
 import { SortTypeSheet } from "@/frontend/components/sort-type-sheet";
 import { can } from "@/shared/permissions";
 import { roleLabel } from "@/shared/role-label";
-import { loadRefDate } from "@/shared/load-ref";
+import { loadRefDateTime } from "@/shared/load-ref";
 
 type Lot = {
   /** Row identity. A multi-material load contributes several rows sharing one
@@ -50,9 +50,44 @@ function enteredBy(l: Pick<Lot, "capturedByName" | "capturedByRole">): string {
   return l.capturedByRole ? roleLabel(l.capturedByRole) : "—";
 }
 
-/** The one line that identifies a load. Unchanged — see the selector below. */
+/**
+ * The one line that identifies a load.
+ *
+ * Reference → material → vehicle → who received it → when. The last part now
+ * carries the TIME as well as the day: the date alone could not separate two
+ * loads booked off the same vehicle for the same material on the same shift.
+ * It is the load's own saved `createdAt`, the same value Recent Load Details
+ * shows on Inward.
+ */
 function lotLabel(l: Lot): string {
-  return `${l.loadRef} / ${l.materialLabel} / ${l.vehicleNumber} / ${enteredBy(l)} / ${loadRefDate(l.createdAt)}`;
+  return `${l.loadRef} / ${l.materialLabel} / ${l.vehicleNumber} / ${enteredBy(l)} / ${loadRefDateTime(l.createdAt)}`;
+}
+
+/**
+ * Everything about a load that is worth typing at the selector.
+ *
+ * The label plus the vendor, which the label has no room for but which is the
+ * first thing an operator remembers about a delivery. Built from the SAME
+ * `lotLabel` the option renders, so nothing can be searchable that is not
+ * visible and nothing visible can fail to match — one string, one source.
+ */
+function lotHaystack(l: Lot): string {
+  return `${lotLabel(l)} / ${l.vendorName} / ${l.lotNumber}`.toLowerCase();
+}
+
+/**
+ * Matches when EVERY whitespace-separated token appears somewhere in the load.
+ *
+ * Token-wise rather than as one substring, so "mixed 7146" finds the load that
+ * a single `includes()` would miss — the operator recalls two fragments from
+ * different columns, not the label verbatim, and the order they say them in is
+ * not the order the label happens to use.
+ */
+function lotMatches(l: Lot, query: string): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const hay = lotHaystack(l);
+  return tokens.every((t) => hay.includes(t));
 }
 
 /**
@@ -71,6 +106,19 @@ function lotLabel(l: Lot): string {
  * to that control's own left and right edges, so it is physically incapable of
  * being wider than the field. Every option still carries all five parts of the
  * label; they wrap instead of widening.
+ *
+ * ── One control, not two ─────────────────────────────────────────────────────
+ * The field IS the search box. It holds a real `<input>` at all times rather
+ * than a button that swaps itself for one, because a control that becomes an
+ * input on tap cannot open a phone keyboard: the browser decides that at focus
+ * time, and by then the element the finger landed on is gone. Always-an-input
+ * means one tap focuses it, raises the keyboard and opens the list together —
+ * no second tap and no separate search button.
+ *
+ * Closed, the input carries the selected load's label so the field reads as a
+ * value. Focused, it swaps to the query and prompts for one; typing filters.
+ * Blur restores the label. `value` remains the only selection state — the query
+ * is scratch, and abandoning a search cannot change what is selected.
  */
 function LoadSelect({
   lots,
@@ -78,21 +126,42 @@ function LoadSelect({
   onChange,
 }: {
   lots: Lot[];
-  value: string;
+  /** `null` until the operator picks one — nothing is selected on arrival. */
+  value: string | null;
   onChange: (lotKey: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const selected = lots.find((l) => l.lotKey === value) ?? null;
+  const matches = query.trim() ? lots.filter((l) => lotMatches(l, query)) : lots;
+
+  /** Leaves search mode without touching the selection. */
+  function close() {
+    setOpen(false);
+    setQuery("");
+  }
+
+  function choose(lotKey: string) {
+    onChange(lotKey);
+    close();
+    // Give the field back its own focus ring rather than leaving it on a list
+    // row that no longer exists.
+    inputRef.current?.blur();
+  }
 
   // Close on an outside tap or Escape — what a native select does for free.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!wrapRef.current?.contains(e.target as Node)) close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        close();
+        inputRef.current?.blur();
+      }
     };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
@@ -102,39 +171,87 @@ function LoadSelect({
     };
   }, [open]);
 
+  /**
+   * On a phone the keyboard covers the lower half of the screen the moment this
+   * opens, and the menu hangs BELOW the field — so a field sitting mid-screen
+   * puts its own list under the keyboard. Bringing the field up first is what
+   * keeps the list in the part of the viewport that is still visible.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => wrapRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 60);
+    return () => clearTimeout(t);
+  }, [open]);
+
   return (
     <div className="selectWrap" ref={wrapRef}>
-      <button
-        type="button"
-        className="selectCtl"
+      {/* The `.selectCtl` shell is unchanged — same panel, border, radius,
+          padding, font and focus colour. Only what sits inside it went from a
+          span to an input. */}
+      <div
+        className={`selectCtl${open ? " searching" : ""}`}
+        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label="Select load"
-        onClick={() => setOpen((o) => !o)}
+        aria-controls="loadSelectMenu"
+        onClick={() => inputRef.current?.focus()}
       >
-        {/* One line, ellipsised: the closed field must not grow either. */}
-        <span className="selectCtlVal">{selected ? lotLabel(selected) : "Select load"}</span>
+        <input
+          ref={inputRef}
+          type="text"
+          className={`selectCtlVal${!open && !selected ? " placeholder" : ""}`}
+          aria-label="Select load — type to search"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          // Focused: the query and a prompt for one. Idle: the chosen load.
+          value={open ? query : selected ? lotLabel(selected) : ""}
+          placeholder={open ? "Type to search loads…" : "Click here to select load"}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            // Typing without opening first still searches — the field never
+            // needs to be "activated" before it will accept a query.
+            setOpen(true);
+            setQuery(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            // Enter takes the single obvious answer, which is what a search
+            // narrowed to one row means. Never guesses between several.
+            if (e.key === "Enter" && matches.length > 0) {
+              e.preventDefault();
+              choose(matches[0].lotKey);
+            }
+          }}
+        />
         <span className="selectCaret" aria-hidden>
           ▾
         </span>
-      </button>
+      </div>
 
       {open && (
-        <ul className="selectMenu" role="listbox" aria-label="Select load">
-          {lots.map((l) => (
+        <ul className="selectMenu" id="loadSelectMenu" role="listbox" aria-label="Select load">
+          {matches.map((l) => (
             <li
               key={l.lotKey}
               role="option"
               aria-selected={l.lotKey === value}
               className={`selectOpt${l.lotKey === value ? " on" : ""}`}
-              onClick={() => {
-                onChange(l.lotKey);
-                setOpen(false);
+              // `pointerdown`, not click: the input's blur would otherwise tear
+              // the row out from under the finger before the click landed.
+              onPointerDown={(e) => {
+                e.preventDefault();
+                choose(l.lotKey);
               }}
             >
               {lotLabel(l)}
             </li>
           ))}
+          {matches.length === 0 && (
+            <li className="selectOpt selectNone" aria-disabled>
+              No load matches “{query.trim()}”
+            </li>
+          )}
         </ul>
       )}
     </div>
@@ -263,20 +380,19 @@ export default function SortPage() {
   const lots = data?.lots ?? [];
   const [selectedLotKey, setSelectedLotKey] = useState<string | null>(null);
   /**
-   * With nothing explicitly selected, show the MOST RECENTLY RECEIVED lot.
+   * NOTHING is selected until the operator selects it.
    *
-   * `/api/sort/pending` returns the queue oldest-first, and this defaulted to
-   * `lots[0]` — the oldest waiting lot. So an operator who had just weighed a
-   * load, walked to Sort and found some other lot on screen concluded the load
-   * had not arrived. It always had: it was in the selector all along, several
-   * entries down. The bug was never in the save, the stock, the queue or the
-   * invalidation — only in which of the queued lots the screen opened on.
+   * This used to fall back to a lot of its own choosing — first `lots[0]`, then
+   * the most recent — so the screen always opened on some load and a segregation
+   * run could be started against one nobody had picked. Guessing wrong is worse
+   * than not guessing: the allocations, the wastage and the ledger entry all
+   * belong to whichever lot happened to be underneath.
    *
-   * It read as a Walk-in problem because the older lots already on the queue
-   * carry a vendor name, so a load saved against that same vendor happened to
-   * look like the one that had just been saved.
+   * So the selector opens empty and the operator names the load. `null` here
+   * means "not chosen yet", which is a different screen from "no lots waiting"
+   * — see the two branches below.
    */
-  const lot = lots.find((l) => l.lotKey === selectedLotKey) ?? lots[lots.length - 1] ?? null;
+  const lot = lots.find((l) => l.lotKey === selectedLotKey) ?? null;
   const [alloc, setAlloc] = useState<Record<string, number>>({});
   const [waste, setWaste] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -308,14 +424,12 @@ export default function SortPage() {
   const unitOf = (rowId: string): UnitCode => units[rowId] ?? "KG";
   const setUnitOf = (rowId: string, u: UnitCode) => setUnits((prev) => ({ ...prev, [rowId]: u }));
 
-  // Reset allocations when the active lot changes.
+  // Reset allocations when the active lot changes. No pinning is needed now
+  // that `lot` IS the explicit selection — a load saved by someone else mid-run
+  // can no longer slide underneath an operator part-way through allocating.
   useEffect(() => {
     if (lot && lot.lotKey !== activeLotId) {
       setActiveLotId(lot.lotKey);
-      // Pin the auto-selection. Without this the selection is "whatever is last
-      // in the queue", so a load saved by someone else mid-run would slide under
-      // the operator and wipe the allocations they were part-way through.
-      setSelectedLotKey(lot.lotKey);
       setAlloc(Object.fromEntries(lot.targets.map((t) => [t.skuId, 0])));
       setWaste(0);
       setUnits({});
@@ -330,6 +444,42 @@ export default function SortPage() {
         <div className="skel" style={{ height: 90, marginBottom: 12 }} />
         <div className="skel" style={{ height: 54, marginBottom: 8 }} />
         <div className="skel" style={{ height: 54, marginBottom: 8 }} />
+      </>
+    );
+  }
+
+  /**
+   * Lots ARE waiting, but the operator has not named one yet.
+   *
+   * The selector is the whole screen at this point, in the same `.field` shell
+   * it occupies once a load is chosen, so choosing one changes what is below it
+   * and not where the control sits.
+   */
+  if (!lot && lots.length > 0) {
+    return (
+      <>
+        <div className="secTitle">Segregation Run</div>
+        <div className="field">
+          <label>Select load</label>
+          <LoadSelect lots={lots} value={null} onChange={setSelectedLotKey} />
+        </div>
+        <div className="lot">
+          <h3>No load selected</h3>
+          <div className="big" style={{ fontSize: 18 }}>
+            {lots.length} waiting
+          </div>
+          <small style={{ fontFamily: "var(--mono)", color: "var(--muted)" }}>
+            Tap the field above and choose the load you are about to sort.
+          </small>
+        </div>
+        {canManageSortTypes && (
+          <>
+            <div className="chip manageChip" onClick={() => setSortTypesOpen(true)}>
+              ⚙ Manage Sort Types
+            </div>
+            <SortTypeSheet open={sortTypesOpen} onClose={() => setSortTypesOpen(false)} />
+          </>
+        )}
       </>
     );
   }

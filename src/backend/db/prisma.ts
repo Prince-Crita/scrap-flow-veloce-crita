@@ -1,4 +1,35 @@
+import dns from "node:dns";
 import { Prisma, PrismaClient } from "@prisma/client";
+
+/**
+ * Prefer IPv4 when resolving the database host, process-wide.
+ *
+ * Root cause of the recurring "Can't reach database server" on local dev:
+ * Neon's hostname returns BOTH an AAAA (IPv6) and an A (IPv4) record, Node
+ * tries the AAAA addresses first, and on this network the IPv6 route to Neon
+ * is not there — every IPv6 address times out before Node ever falls back to
+ * the IPv4 one, which connects immediately. Confirmed directly: all three
+ * IPv6 addresses failed a raw TCP test on port 5432; the IPv4 address
+ * succeeded on the first try, same host, same second.
+ *
+ * `dns.setDefaultResultOrder("ipv4first")` is a Node built-in (no dependency
+ * added) that reorders `dns.lookup()` results so the working address is tried
+ * first — IPv6 is still available, just no longer tried ahead of a route that
+ * doesn't exist here. Nothing about the connection itself changes: same host,
+ * same port, same `sslmode=require`, same credentials.
+ *
+ * Set here, not in an env var or a per-request option, because this is the one
+ * module every Prisma client in the app is built from — dev server, build,
+ * `next start`, and any script that imports it. It has to run before the
+ * first `new PrismaClient()` below, which is why it is the first thing in the
+ * file rather than living in `instrumentation.ts` (which only covers the
+ * Next.js server process, not a standalone script).
+ */
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  // Old Node without this API: connections just behave as they did before.
+}
 
 /**
  * The Prisma client, pinned on `globalThis` in EVERY environment — production

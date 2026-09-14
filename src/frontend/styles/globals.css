@@ -19,6 +19,34 @@
   --muted: #8fae9c;
   --disp: var(--font-disp), "Poppins", sans-serif;
   --mono: var(--font-mono), "JetBrains Mono", monospace;
+
+  /* ── Overlay layers ────────────────────────────────────────────────────────
+     The single source of truth for what sits above what. Every overlay in the
+     yard app is a child of the `.phone` frame — the tab bar and the three hosts
+     directly, every dialog through `PhonePortal` — so these four values decide
+     the whole stack and there is no other place to look.
+
+     Rule of the scale: a thing raised FROM another thing outranks it.
+
+       --z-nav      page chrome. Below everything a dialog puts on screen.
+       --z-modal    any `.sheetWrap` dialog. All dialogs share one rank: they
+                    are siblings in the portal, so a dialog opened from a dialog
+                    is later in the DOM and therefore already on top. Giving the
+                    second one a higher number would only invite the third.
+       --z-overlay  a blocking overlay raised from a dialog — the confirmation
+                    and the celebration. Must beat --z-modal or a confirmation
+                    asked for BY a dialog is unreadable behind it.
+       --z-toast    transient status. Topmost because it reports on whatever is
+                    frontmost, and safe there because it is `pointer-events:
+                    none` and can never intercept a tap.
+
+     Do not hard-code a z-index on a new overlay; take the rank it belongs to.
+     A tip or menu INSIDE a dialog needs none of these — it is already inside
+     that dialog's stacking context (see `.captureTip`, `.selectMenu`). */
+  --z-nav: 10;
+  --z-modal: 55;
+  --z-overlay: 60;
+  --z-toast: 70;
 }
 
 * {
@@ -577,6 +605,82 @@ header {
   border-radius: 11px;
   font-size: 17px;
 }
+/* ---- ACTION CARDS (Supervisor Outward) ----
+   Modifiers on `.sqCard`, not a second card. The panel, border, radius, hover
+   lift, press response, focus ring and transition are all inherited from the
+   Stock card above; what changes is that an action card reports no figure, so
+   its content is one centred icon over one centred label.
+
+   `aspect-ratio` is dropped for a `min-height` on purpose. A square at three
+   columns on a 390px phone is ~106px, and "Active Pick Ups" needs two lines
+   inside it — the square would either clip the label or force the type down to
+   an unreadable size. A minimum height with grid stretch gives the same
+   guarantee the square did (every card in the row is exactly as tall as its
+   neighbours) without pinning that height to the column width. */
+.sqGrid.actionGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+.sqCard.actionCard {
+  aspect-ratio: auto;
+  min-height: 118px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: 14px 8px;
+}
+/* Larger than the dashboard's 34px because it is the only thing in the card —
+   the four points the Stock card spends on its figure are spent here. Same
+   tinted rounded shell, same token. */
+.sqCard.actionCard .chipIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  color: var(--text);
+}
+.actionLbl {
+  font-family: var(--disp);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+  /* Wraps to a second line rather than widening the card or being cut. */
+  overflow-wrap: anywhere;
+}
+/* Tablet and desktop: the same one step up the Stock cards take at this width. */
+@media (min-width: 700px) {
+  .sqCard.actionCard {
+    min-height: 150px;
+    gap: 12px;
+    padding: 18px 12px;
+  }
+  .sqCard.actionCard .chipIcon {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+  }
+  .actionLbl {
+    font-size: 14.5px;
+  }
+}
+/* Small phones: three columns is ~100px wide, so the icon steps down to keep
+   the label on two comfortable lines instead of three cramped ones. */
+@media (max-width: 360px) {
+  .sqCard.actionCard {
+    min-height: 108px;
+    gap: 8px;
+    padding: 12px 6px;
+  }
+  .sqCard.actionCard .chipIcon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+  .actionLbl {
+    font-size: 11.5px;
+  }
+}
 .sqCount {
   font-family: var(--mono);
   font-size: 11px;
@@ -981,7 +1085,13 @@ header {
   font-size: 11px;
   padding: 8px 12px;
   border-radius: 10px;
-  white-space: nowrap;
+  /* Was `nowrap`, which was safe only while the one message it carried was
+     short. It now also says "Tap Add to Load to add the weight.", so it is
+     bounded by the keypad instead: shrink-to-fit keeps a short tip on one line,
+     and a long one wraps rather than growing past the pad's left edge. The
+     bubble still floats ABOVE `.pad` — no key, digit or total moves. */
+  max-width: 100%;
+  white-space: normal;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   z-index: 20;
   animation: fade 0.2s ease;
@@ -1864,7 +1974,7 @@ nav.tabbar {
   display: flex;
   padding: 10px calc(8px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom))
     calc(8px + env(safe-area-inset-left));
-  z-index: 10;
+  z-index: var(--z-nav);
 }
 nav.tabbar a,
 nav.tabbar button {
@@ -1915,7 +2025,7 @@ nav.tabbar .on .ico {
   transition: 0.3s;
   white-space: nowrap;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-  z-index: 50;
+  z-index: var(--z-toast);
 }
 .toast.show {
   opacity: 1;
@@ -1926,7 +2036,7 @@ nav.tabbar .on .ico {
 .party {
   position: absolute;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-overlay);
   display: none;
   align-items: center;
   justify-content: center;
@@ -2093,7 +2203,7 @@ nav.tabbar .on .ico {
 .sheetWrap {
   position: absolute;
   inset: 0;
-  z-index: 55;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2283,13 +2393,64 @@ nav.tabbar .on .ico {
 .selectCtl:focus-visible {
   border-color: var(--orange);
 }
-/* The closed field must not grow either: one line, clipped with an ellipsis. */
-.selectCtlVal {
+/* The shell now holds an <input>, so the ring belongs to whatever is focused
+   INSIDE it. Same orange the control always used — no new colour. */
+.selectCtl:focus-within,
+.selectCtl.searching {
+  border-color: var(--orange);
+}
+/* The closed field must not grow either: one line, clipped with an ellipsis.
+
+   Scoped through `.selectCtl` deliberately. This control lives inside a
+   `.field`, and `.field input` is (0,1,1) — a bare `.selectCtlVal` at (0,1,0)
+   loses to it, and the input arrives wearing the panel background, border and
+   padding of a standalone form field INSIDE the shell that already draws them.
+   Two nested fields is what that looks like on screen. */
+.selectCtl .selectCtlVal {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Was a <span>; as an <input> it has to be told to inherit the shell's type
+     and to stop drawing a field of its own. Nothing about the control's
+     appearance changes — this is what keeps it identical. */
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  outline: none;
+  width: 100%;
+  /* iOS zooms the page when a field under 16px takes focus. The shell is 15px
+     by design, so the zoom is disabled rather than the type enlarged. */
+  touch-action: manipulation;
+}
+/* `.field input:focus` would otherwise put an orange border back on the inner
+   input; the ring belongs to the shell, which `.selectCtl:focus-within` draws. */
+.selectCtl .selectCtlVal:focus {
+  border: 0;
+  outline: none;
+}
+.selectCtl .selectCtlVal::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+/* Nothing chosen: the resting field is an instruction, so it reads muted like
+   every other placeholder in the app. */
+.selectCtl .selectCtlVal.placeholder {
+  color: var(--muted);
+}
+/* "No load matches …" — a message, not a choice. */
+.selectOpt.selectNone {
+  color: var(--muted);
+  cursor: default;
+}
+.selectOpt.selectNone:hover {
+  background: none;
 }
 .selectCaret {
   flex: none;
@@ -2306,7 +2467,10 @@ nav.tabbar .on .ico {
   left: 0;
   right: 0;
   z-index: 30;
-  max-height: 46vh;
+  /* `dvh`, not `vh`: with the field now raising a keyboard, `vh` measures the
+     screen the keyboard is covering and the list runs underneath it. The
+     dynamic unit shrinks with the visible viewport instead. */
+  max-height: 46dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -3075,4 +3239,302 @@ button.chip {
   font-size: 12px;
   line-height: 1.2;
   letter-spacing: 0.06em;
+}
+
+/* =====================================================================
+   DISPATCH WORKFLOW (Supervisor Outward)
+   Built entirely from tokens already in this file — --panel, --panel2,
+   --line, --text, --muted, --orange, --led, --brand — and from the radii
+   and type scale the cards above already use. No new colour is introduced.
+   ===================================================================== */
+
+/* The back row that sits above a workflow page's title. */
+.dTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.dBack {
+  background: none;
+  border: 0;
+  padding: 6px 2px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  /* Comfortable thumb target without giving it a box of its own. */
+  min-height: 32px;
+}
+.dBack:active {
+  color: var(--text);
+}
+.dRef {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--orange);
+  white-space: nowrap;
+}
+.dStepOf {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  margin: -2px 0 10px;
+}
+
+/* ---- The progress rail ----
+   A line with points on it, not a list of sentences. Vertical on a phone
+   because five labels cannot share 390px horizontally without truncating
+   the one word that identifies each step. */
+.dRail {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.dRailStep {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+}
+/* The connector. Drawn from the mark downwards, and never after the last
+   step — `:last-child` is what stops the line dangling into the padding. */
+.dRailStep:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 22px;
+  bottom: -5px;
+  width: 1px;
+  background: var(--line);
+}
+.dRailStep.is-done:not(:last-child)::before {
+  background: var(--brand);
+}
+.dRailMark {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  line-height: 1;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  position: relative;
+  z-index: 1;
+}
+.dRailStep.is-done .dRailMark {
+  border-color: var(--brand);
+  background: rgba(46, 139, 79, 0.18);
+  color: var(--led);
+}
+.dRailStep.is-current .dRailMark {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.dRailLbl {
+  font-family: var(--disp);
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.25;
+}
+.dRailStep.is-done .dRailLbl {
+  color: var(--text);
+}
+.dRailStep.is-current .dRailLbl {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+/* ---- Status pill ----
+   The chip vocabulary already on the page, at metadata size. */
+.dPill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dPill.is-active {
+  border-color: var(--orange);
+  color: var(--orange);
+  background: rgba(245, 158, 43, 0.12);
+}
+.dPill.is-in_transit {
+  border-color: var(--mint);
+  color: var(--mint);
+  background: rgba(159, 230, 184, 0.1);
+}
+.dPill.is-completed {
+  border-color: var(--brand);
+  color: var(--led);
+  background: rgba(46, 139, 79, 0.16);
+}
+
+/* ---- The selected dispatch on the Outward home ---- */
+.dSelected {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.dSelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.dSelHead b {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+}
+.dSelMeta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 10px;
+  line-height: 1.35;
+}
+/* The rail sits inside a panel here, so it drops its own. */
+.dSelected .dRail,
+.rlBody .dRail {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-bottom: 10px;
+}
+
+@media (min-width: 700px) {
+  .dRailLbl {
+    font-size: 13.5px;
+  }
+  .dSelHead b {
+    font-size: 15px;
+  }
+  .dSelMeta {
+    font-size: 12px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MATERIAL PICKER — hierarchy, search and the View All fold
+
+   No new colours, radii or fonts: every value below is an existing token or a
+   value already used by `.pickRow` / `.chip`. The picker had to carry the whole
+   material tree instead of a flat list of mixed buckets, and these are the
+   smallest additions that keep that legible at 390px.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The group heading above each main category's sub-materials. Quiet by
+   design — it labels, it does not compete with the rows. */
+.pickGroup {
+  margin: 12px 2px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pickGroup:first-child {
+  margin-top: 2px;
+}
+
+/*
+  `.pickRow span` is (0,1,1) and sets flex:1 + nowrap on EVERY descendant span,
+  which would give the icon and the label a flex share each and collapse the
+  row. These are (0,2,0) — two classes — so they win, and only the label is
+  allowed to be the flexible, truncating cell.
+*/
+.pickRow .pickName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+}
+.pickRow .pickIcon {
+  flex: 0 0 auto;
+  font-size: 15px;
+  line-height: 1;
+}
+.pickRow .pickLbl {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Which workflow this choice starts. Reuses the `.chip` treatment — same
+   radius, same border, same muted weight — at badge scale. */
+.pickRow .pickTag {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg);
+}
+.pickRow .pickTag.mixed {
+  border-color: rgba(245, 158, 43, 0.45);
+  color: var(--orange);
+}
+
+/* The fold. A plain ghost CTA, tightened so it reads as a list affordance
+   rather than the sheet's primary action. */
+.pickMore {
+  margin-top: 2px;
+  margin-bottom: 10px;
+}
+
+/* ── Add Material · Mixed? YES / NO ─────────────────────────────────────────
+   Two segments in one control, sized like `.field input` so the form keeps a
+   single rhythm. Selected state is the `.pickRow.on` treatment, unchanged. */
+.kindToggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.kindBtn {
+  padding: 12px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  cursor: pointer;
+}
+.kindBtn.on {
+  background: rgba(245, 158, 43, 0.14);
+  border-color: var(--orange);
+  color: var(--orange);
+  font-weight: 600;
+}
+.kindBtn:active {
+  transform: scale(0.98);
 }

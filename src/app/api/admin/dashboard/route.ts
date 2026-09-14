@@ -716,8 +716,10 @@ export async function GET() {
       materials: d.lines.map((l) => ({
         name: l.sku.name,
         kg: l.quantityKg,
-        invoiceNumber: l.sale.invoiceNumber,
-        buyerName: l.sale.buyer.name,
+        // Null since the Supervisor dispatch workflow: that flow loads a
+        // vehicle directly rather than against a buyer's allocation.
+        invoiceNumber: l.sale?.invoiceNumber ?? null,
+        buyerName: l.sale?.buyer.name ?? null,
       })),
     })),
 

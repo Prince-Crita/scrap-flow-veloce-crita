@@ -10,7 +10,23 @@ const TABS = [
   { s: "inward", href: "/inward", ico: "⚖️", label: "INWARD", cap: "inward.create" },
   { s: "sort", href: "/sort", ico: "🧲", label: "SORT", cap: "sort.complete" },
   { s: "sell", href: "/sell", ico: "🚚", label: "SELL", cap: "sell.view" },
-  { s: "outward", href: "/outward", ico: "🏁", label: "OUTWARD", cap: "outward.dispatch" },
+  {
+    s: "outward",
+    href: "/outward",
+    ico: "🏁",
+    label: "OUTWARD",
+    cap: "outward.dispatch",
+    /**
+     * The one tab that is not capability-driven alone.
+     *
+     * The Owner HAS `outward.dispatch` — the dispatch workflow on the Sell page
+     * depends on it — but reaches it from Sell rather than from a tab of its
+     * own. So the capability stays exactly as it is (removing it would break
+     * that approved workflow) and only the tab is withheld, which keeps the
+     * Owner's bar at its four tabs.
+     */
+    roles: ["MANAGER", "ADMIN"] as readonly Role[],
+  },
 ] as const;
 
 /**
@@ -25,7 +41,8 @@ export function BottomNav({ role }: { role: Role }) {
   const pathname = usePathname();
   // Driven by the shared permission matrix: MANAGER still has no SELL tab, and
   // an ADMIN inside a yard sees it because ADMIN inherits OWNER capabilities.
-  const tabs = TABS.filter((t) => can(role, t.cap));
+  // A tab may additionally narrow itself to specific roles — see OUTWARD above.
+  const tabs = TABS.filter((t) => can(role, t.cap) && (!("roles" in t) || t.roles.includes(role)));
   return (
     <nav className="tabbar">
       {tabs.map((t) => {

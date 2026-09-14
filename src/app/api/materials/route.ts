@@ -4,26 +4,63 @@ import { publishMany } from "@/backend/realtime/realtime";
 
 export const dynamic = "force-dynamic";
 
-/** Mixed-bucket SKUs are the inward material choices (Mixed MS, PET Mixed, Aluminum Mixed). */
+/**
+ * The materials that can be BOOKED against — Inward's selector, and Dispatch's.
+ *
+ * Two shapes, chosen by `?all=1`:
+ *
+ *   default   the selectable set. Every mixed bucket (PET Mixed, Mixed MS) AND
+ *             every visible sub-material (PET White, MS Bazar), each carrying
+ *             the main category it hangs off. A mixed choice routes the load to
+ *             Sort; a sub-material choice goes straight to that sub-material's
+ *             stock — see src/shared/material-kind.ts, which is the one place
+ *             that rule is written down.
+ *
+ *   ?all=1    main categories only, including deactivated ones. This is the
+ *             MANAGEMENT view (`material-sheet.tsx` lists inactive materials to
+ *             restore or purge them), so it is deliberately unchanged.
+ *
+ * Hidden SKUs are excluded from the selectable set: `visible: false` is how a
+ * sort type is retired, and a retired category must stop being offered on new
+ * work while keeping its stock and its history.
+ */
 export async function GET(req: Request) {
   const guard = await requireYard();
   if ("res" in guard) return guard.res;
   const { prisma } = guard;
 
-  const includeInactive = new URL(req.url).searchParams.get("all") === "1";
-  const buckets = await prisma.sku.findMany({
-    where: includeInactive
+  const managementView = new URL(req.url).searchParams.get("all") === "1";
+  const rows = await prisma.sku.findMany({
+    where: managementView
       ? { isMixedBucket: true }
-      : { isMixedBucket: true, OR: [{ material: { active: true } }, { materialId: null }] },
-    orderBy: { sortOrder: "asc" },
-    select: { id: true, code: true, name: true, material: { select: { id: true, active: true } } },
+      : {
+          visible: true,
+          // A SKU with no material predates the hierarchy; it is still bookable.
+          OR: [{ material: { active: true } }, { materialId: null }],
+        },
+    // Mixed buckets first within a category, then the yard's own ordering, so
+    // the picker groups the way the material tree is actually shaped.
+    orderBy: [{ isMixedBucket: "desc" }, { sortOrder: "asc" }],
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      icon: true,
+      isMixedBucket: true,
+      material: { select: { id: true, name: true, active: true } },
+    },
   });
   return ok({
-    materials: buckets.map((b) => ({
+    materials: rows.map((b) => ({
       id: b.id,
       code: b.code,
       name: b.name,
+      icon: b.icon,
       materialId: b.material?.id ?? null,
+      /** The main category's name — what the picker groups and searches on. */
+      materialName: b.material?.name ?? null,
+      /** MIXED → Sort. DIRECT → straight to this sub-material's stock. */
+      isMixedBucket: b.isMixedBucket,
       active: b.material?.active ?? true,
     })),
   });

@@ -88,6 +88,38 @@ enum DispatchStatus {
   COMPLETED
 }
 
+/// Where a Supervisor dispatch has got to in the four-stage workflow
+/// (Fleet → Materials → In Transit → Proof). Persisted rather than derived so
+/// the backend stays the source of truth across a refresh, a new device or a
+/// resumed session — see `src/shared/dispatch-stage.ts`, which is the only
+/// place that maps a stage to what the operator is shown next.
+enum DispatchStage {
+  /// Vehicle, driver and empty weighbridge slip captured. The dispatch exists.
+  FLEET
+  /// At least one material line committed against it.
+  MATERIALS
+  /// The vehicle has left: departure time and the loaded-vehicle photograph
+  /// captured (delivery challan optional). Added after FLEET/MATERIALS/PROOF
+  /// already existed, so it is listed last — enum ORDER is not workflow order,
+  /// which `DISPATCH_STEPS` owns.
+  TRANSIT
+  /// Loaded weighbridge slip captured and signed off. Terminal.
+  PROOF
+}
+
+/// The dispatch's lifecycle, which is NOT the same question as its stage: a
+/// dispatch sitting at MATERIALS is IN_TRANSIT, and one that has finished PROOF
+/// is COMPLETED. Kept separate so the workflow can gain a stage without
+/// rewriting every status filter.
+enum DispatchState {
+  /// Created — fleet details saved, nothing loaded yet.
+  ACTIVE
+  /// Carrying material; proof not yet captured.
+  IN_TRANSIT
+  /// Every required stage satisfied.
+  COMPLETED
+}
+
 /// Tenant root. One company owns many yards; a yard owns all of its operational
 /// data. Deactivating a yard blocks its users' logins but never deletes data —
 /// the FKs below are Restrict precisely so a yard with history cannot be erased.
@@ -166,6 +198,9 @@ model User {
 
   inwardLoads     InwardLoad[]
   outwardLoads    OutwardLoad[]
+  /// Dispatches this user signed the Proof of Dispatch for. Separate from
+  /// `outwardLoads` (who opened them) — see `OutwardLoad.proofById`.
+  dispatchProofs  OutwardLoad[]         @relation("DispatchProofBy")
   segregationRuns SegregationRun[]
   sales           Sale[]
   vendorsCreated  Vendor[]
@@ -674,13 +709,50 @@ model OutwardLoad {
   vehicleNumber   String?
   vehicleType     String?
   driverName      String?
+  /// Captured alongside the name in Fleet Management. Mirrors
+  /// `InwardLoad.driverPhone` and `Sale.driverPhone` exactly — same type, same
+  /// optionality, same 15-character cap at the API boundary.
+  driverPhone     String?
   ocrConfidence   Float?
   frontImageUrl   String?
   backImageUrl    String?
   totalKg         Int
+
+  /// ── Supervisor dispatch workflow ──────────────────────────────────────────
+  /// All nullable or defaulted, so every dispatch written by the older
+  /// allocation flow keeps its exact meaning: it was created and completed in
+  /// one request, which is what COMPLETED/PROOF describe.
+  stage           DispatchStage @default(PROOF)
+  state           DispatchState @default(COMPLETED)
+  /// Weighbridge slip for the EMPTY vehicle, taken before loading.
+  emptySlipUrl    String?
+  /// The loaded vehicle, photographed as proof of dispatch.
+  filledImageUrl  String?
+  /// Delivery challan. Optional by design — it never blocks completion.
+  dcUrl           String?
+  /// When the vehicle actually left, chosen by the operator on the In Transit
+  /// step. Distinct from `createdAt`, which is when the record was opened.
+  dispatchedAt    DateTime?
+
+  /// ── Proof of Dispatch (step 4) ────────────────────────────────────────────
+  /// The weighbridge slip for the LOADED vehicle, the counterpart to
+  /// `emptySlipUrl` captured at Fleet. Nullable and additive: every dispatch
+  /// written before this step existed reads as "not captured", and none of them
+  /// is re-evaluated — `state` stays the authority for what is already done.
+  loadedSlipUrl   String?
+  /// Who signed off the proof. Distinct from `dispatchedById`, which records
+  /// who OPENED the dispatch at Fleet — on a shift handover they are different
+  /// people, and the proof is the one that has to name its author.
+  proofById       String?
+  proofBy         User?    @relation("DispatchProofBy", fields: [proofById], references: [id])
+  /// Sale invoice attached by the Owner from Ready to Invoice, after the
+  /// dispatch completed. Optional: it is paperwork that follows the goods.
+  invoiceUrl      String?
+
   dispatchedById  String?
   dispatchedBy    User?    @relation(fields: [dispatchedById], references: [id])
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 
   lines  OutwardLoadLine[]
   images OutwardImage[]
@@ -688,6 +760,8 @@ model OutwardLoad {
   @@unique([yardId, dispatchNumber])
   @@unique([yardId, clientRequestId])
   @@index([yardId, createdAt])
+  /// The Active Dispatch tabs filter on exactly this pair, newest first.
+  @@index([yardId, state, createdAt])
   /**
    * Platform-wide "most recent" reads.
    * The admin console's recent-activity lists order by `createdAt` across ALL
@@ -708,14 +782,33 @@ model OutwardLoadLine {
   yard       Yard        @relation(fields: [yardId], references: [id])
   loadId     String
   load       OutwardLoad @relation(fields: [loadId], references: [id], onDelete: Cascade)
-  saleId     String
-  sale       Sale        @relation(fields: [saleId], references: [id])
+  /// Nullable since the Supervisor dispatch workflow: that flow loads a vehicle
+  /// directly rather than against a buyer's allocation, so it has no Sale to
+  /// point at. Every line the allocation flow writes still carries one, and the
+  /// Owner's Sell page reads `Sale.outwardLoadLines` — a relation that simply
+  /// does not include the rows without a sale, which is the correct answer.
+  ///
+  /// `onDelete: Restrict` is stated explicitly, and it is what the database
+  /// already enforces. Making the column optional would otherwise flip Prisma's
+  /// implied action to SET NULL — letting a Sale with dispatch history be
+  /// deleted and silently detaching its dispatched lines from it. Restrict keeps
+  /// that history attached, exactly as it was when the column was required.
+  saleId     String?
+  sale       Sale?       @relation(fields: [saleId], references: [id], onDelete: Restrict)
   skuId      String
   sku        Sku         @relation(fields: [skuId], references: [id])
   sequence   Int
   /// ALWAYS kilograms — the unit selector converts in the UI layer, exactly as
   /// on Inward. A unit is never stored on a ledger table.
   quantityKg Int
+  /// What the material went out at. Mirrors `WeightEntry.ratePerKg` on the
+  /// inward side — on the line here, because a dispatch line IS one committed
+  /// cart row rather than a group of weighments.
+  ratePerKg  Float?
+  /// The material's name as it read when the line was committed, so history is
+  /// not rewritten by a later SKU rename. Same reason `InwardLoad.materialLabel`
+  /// exists.
+  materialLabel String?
   createdAt  DateTime    @default(now())
 
   @@index([loadId])

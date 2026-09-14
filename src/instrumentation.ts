@@ -10,6 +10,16 @@ export async function register() {
   // Edge and browser bundles must not pull in child_process.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Must finish before the first Prisma client is constructed. See
+  // `src/backend/db/pin-ipv4.ts` for why this fixes the DB connection and why
+  // it is reached through a dynamic `@/...` import rather than inline here.
+  try {
+    const { pinDatabaseHostToIPv4 } = await import("@/backend/db/pin-ipv4");
+    await pinDatabaseHostToIPv4();
+  } catch (e) {
+    console.error("[startup] could not pin the database host to IPv4:", e);
+  }
+
   try {
     // Eagerly, not lazily: an instance that only receives events would otherwise
     // never open its LISTEN connection and would miss every remote event.

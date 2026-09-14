@@ -1,5 +1,6 @@
 "use client";
 
+import type { Session } from "next-auth";
 import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
@@ -26,7 +27,23 @@ import { AUTH_BASE_PATH } from "@/shared/config/paths";
  * which on the admin console meant re-running a 29-query dashboard aggregate
  * each time you switched tabs.
  */
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  session,
+}: {
+  children: React.ReactNode;
+  /**
+   * The session the server already resolved.
+   *
+   * Without it `SessionProvider` fetches `/api/auth/session` itself on mount —
+   * measured at two calls on every cold page load, and every `useSession()`
+   * consumer (the Proof step's "Entered By", the Owner-only Ready to Invoice
+   * gate) blocks on that round trip before it can render. The root layout
+   * decodes the JWT server-side anyway, so handing the result over removes the
+   * request entirely. Null for a signed-out visitor, which is what /login wants.
+   */
+  session?: Session | null;
+}) {
   const [qc] = useState(
     () =>
       new QueryClient({
@@ -71,6 +88,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // under a prefix — so it follows the configured base path. Unchanged
     // ("/api/auth") when no base path is set.
     <SessionProvider
+      session={session}
       basePath={AUTH_BASE_PATH}
       refetchOnWindowFocus={false}
       refetchInterval={0}

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { requireYard, parseBody, ok, fail } from "@/backend/http/api";
 import { publishMany } from "@/backend/realtime/realtime";
+import { requiresSort } from "@/shared/material-kind";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,24 @@ export async function POST(req: Request) {
 
   const load = await prisma.inwardLoad.findUnique({
     where: { id: d.loadId },
-    include: { lines: { orderBy: { sequence: "asc" } } },
+    include: {
+      // The SKU rides along so the mixed/direct question can be answered before
+      // the status questions below — otherwise a direct line, which is born
+      // SEGREGATED, is refused with "already segregated", which is not what
+      // happened to it. It was never sorted, and never needed to be.
+      lines: { orderBy: { sequence: "asc" }, include: { sku: { select: { isMixedBucket: true, name: true } } } },
+    },
   });
   if (!load) return fail("NOT_FOUND", "Lot not found", 404);
+
+  /**
+   * Nothing on this vehicle is a segregation candidate — every line is a direct
+   * sub-material. Answered before the status check so the reason given is the
+   * real one. See src/shared/material-kind.ts.
+   */
+  if (load.lines.length > 0 && !load.lines.some((l) => requiresSort(l.sku))) {
+    return fail("NOT_SORTABLE", "This lot carries only direct materials — it needs no segregation", 422);
+  }
   if (load.status !== "RECEIVED") return fail("ALREADY_SORTED", "This lot was already segregated", 409);
 
   /**
@@ -49,6 +65,11 @@ export async function POST(req: Request) {
   if (d.lineId) {
     line = load.lines.find((l) => l.id === d.lineId) ?? null;
     if (!line) return fail("NOT_FOUND", "Material line not found on this lot", 404);
+    // Kind before status, for the same reason as above: a direct line is not a
+    // sorted line, and telling the operator it was would be a lie.
+    if (!requiresSort(line.sku)) {
+      return fail("NOT_SORTABLE", `"${line.sku.name}" is a direct material — it needs no segregation`, 422);
+    }
     if (line.status !== "RECEIVED") return fail("ALREADY_SORTED", "This material was already segregated", 409);
   } else if (pendingLines.length === 1) {
     line = pendingLines[0];
@@ -65,7 +86,16 @@ export async function POST(req: Request) {
   // Prefer the bucket the stock actually landed in; fall back to the material's
   // bucket for legacy loads that have no line.
   const source = (line && skus.find((s) => s.id === line!.skuId)) || skus.find((s) => s.isMixedBucket);
-  if (!source || !source.isMixedBucket) return fail("NO_SOURCE", "No mixed bucket for this material", 422);
+  if (!source) return fail("NO_SOURCE", "No mixed bucket for this material", 422);
+  /**
+   * A DIRECT sub-material can never be a segregation source — it arrived as a
+   * finished grade and has nothing to be sorted into. Refused here as well as
+   * being absent from the Sort queue, so the rule holds against a hand-made
+   * request and not only against the UI. See src/shared/material-kind.ts.
+   */
+  if (!requiresSort(source)) {
+    return fail("NOT_SORTABLE", `"${source.name}" is a direct material — it needs no segregation`, 422);
+  }
   const targetIds = new Set(skus.filter((s) => !s.isMixedBucket).map((s) => s.id));
   for (const a of d.allocations) {
     if (!targetIds.has(a.skuId)) return fail("BAD_SKU", "Invalid target SKU in allocation", 422);

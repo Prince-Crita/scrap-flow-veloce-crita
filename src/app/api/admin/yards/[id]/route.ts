@@ -210,14 +210,18 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         skuName: l.sku.name,
         skuIcon: l.sku.icon,
         quantityKg: l.quantityKg,
-        saleId: l.sale.id,
-        invoiceNumber: l.sale.invoiceNumber,
-        buyerName: l.sale.buyer.name,
-        allocatedKg: l.sale.quantityKg,
-        dispatchedKg: l.sale.dispatchedKg ?? 0,
+        // All null for a Supervisor dispatch line, which has no allocation
+        // behind it. The allocation flow's lines are unchanged.
+        saleId: l.sale?.id ?? null,
+        invoiceNumber: l.sale?.invoiceNumber ?? null,
+        buyerName: l.sale?.buyer.name ?? null,
+        allocatedKg: l.sale?.quantityKg ?? null,
+        dispatchedKg: l.sale?.dispatchedKg ?? 0,
         remainingKg:
-          l.sale.dispatchedKg === null ? 0 : Math.max(0, l.sale.quantityKg - l.sale.dispatchedKg),
-        dispatchStatus: l.sale.dispatchStatus ?? "COMPLETED",
+          !l.sale || l.sale.dispatchedKg === null
+            ? 0
+            : Math.max(0, l.sale.quantityKg - l.sale.dispatchedKg),
+        dispatchStatus: l.sale?.dispatchStatus ?? "COMPLETED",
       })),
       audit: dispatchAudit
         .filter((a) => a.entityId === d.id)

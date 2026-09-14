@@ -7,9 +7,28 @@ import { PhonePortal } from "@/frontend/components/phone-portal";
 import { useUI } from "@/frontend/components/ui-provider";
 import { useInvalidateChannels } from "@/frontend/components/realtime/provider";
 
+/** A mixed bucket, as `/api/materials?all=1` returns it: the main categories. */
 type MaterialRow = { id: string; name: string; active: boolean };
 
+/** A main category from `/api/sort-types` — the real `Material` row. */
+type ParentRow = { id: string; name: string; active: boolean };
+
 export type MaterialLite = { id: string; code: string; name: string };
+
+/**
+ * Which kind of material is being created.
+ *
+ * MIXED  → POST /api/materials — creates the main category AND its unsorted
+ *          bucket ("Copper" → "Mixed Copper"). Goes to Sort when inwarded.
+ * DIRECT → POST /api/sort-types — creates a finished grade under an existing
+ *          main category ("PET Blue" under "PET Plastic"). Bypasses Sort.
+ *
+ * BOTH endpoints already existed and are unchanged: `/api/sort-types` is the
+ * "Manage Sort Types" flow, which has always been how a sub-material is added.
+ * This sheet just makes the choice explicit at the point of creation instead of
+ * sending the Owner to a second screen for half of it.
+ */
+type Kind = "MIXED" | "DIRECT";
 
 export function MaterialSheet({
   open,
@@ -25,6 +44,10 @@ export function MaterialSheet({
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [threshold, setThreshold] = useState("");
+  /** Mixed by default: that is what this sheet has always created. */
+  const [kind, setKind] = useState<Kind>("MIXED");
+  /** The main category a DIRECT sub-material hangs off. Required for DIRECT. */
+  const [parentId, setParentId] = useState("");
   const [err, setErr] = useState("");
   const [purgeErr, setPurgeErr] = useState("");
   const [saving, setSaving] = useState(false);
@@ -36,6 +59,22 @@ export function MaterialSheet({
     enabled: open,
   });
   const inactive = (allQ.data?.materials ?? []).filter((m) => m.active === false);
+
+  /**
+   * The main categories a sub-material may be created under.
+   *
+   * Read from `/api/sort-types`, which is the existing endpoint for the
+   * segregation tree and already returns `Material` rows by their own names
+   * ("PET Plastic") — `?all=1` above returns the BUCKET names ("PET Mixed"),
+   * which is the wrong label to offer as a parent. Same query key the sort-type
+   * sheet uses, so opening both costs one fetch, not two.
+   */
+  const treeQ = useQuery({
+    queryKey: ["sortTypesAll"],
+    queryFn: () => getJson<{ materials: ParentRow[] }>("/api/sort-types"),
+    enabled: open,
+  });
+  const parents = (treeQ.data?.materials ?? []).filter((m) => m.active !== false);
 
   /**
    * Permanent delete. The server allows it only when the material has zero
@@ -77,13 +116,31 @@ export function MaterialSheet({
 
   async function submit() {
     setErr("");
+    // A sub-material without a main category has no place in the hierarchy and
+    // nothing to be segregated out of. Refused here and, authoritatively, by
+    // `/api/sort-types`, which 404s an unknown or out-of-yard materialId.
+    if (kind === "DIRECT" && !parentId) {
+      setErr("Choose the main category this sub-material belongs to");
+      return;
+    }
     setSaving(true);
     try {
-      const res = await sendJson<{ material: MaterialLite }>("/api/materials", {
-        name,
-        category: category || undefined,
-        threshold: threshold ? Number(threshold) : undefined,
-      });
+      const res =
+        kind === "MIXED"
+          ? await sendJson<{ material: MaterialLite }>("/api/materials", {
+              name,
+              category: category || undefined,
+              threshold: threshold ? Number(threshold) : undefined,
+            })
+          : // The EXISTING sort-type endpoint — the same one "Manage Sort Types"
+            // calls. It creates the SKU and its Inventory row in one transaction
+            // and publishes materials/stock/sort, so the new grade shows up in
+            // the selector, the stock tree and the sort targets at once.
+            await sendJson<{ sortType: MaterialLite }>("/api/sort-types", {
+              materialId: parentId,
+              name,
+              saleThresholdKg: threshold ? Number(threshold) : undefined,
+            }).then((r) => ({ material: r.sortType }));
       onCreated(res.material);
       /**
        * A new material creates its mixed-bucket SKU and a zero Inventory row, so
@@ -91,11 +148,15 @@ export function MaterialSheet({
        * nothing at all, and the provider drops the actor's own echo — which is why
        * the Stock page did not show the new bucket until something else happened
        * to refresh it.
+       *
+       * `sort` is included for the DIRECT branch: a new sub-material is a new
+       * segregation target, so the Sort screen's target list changes too.
        */
-      invalidateChannels("materials", "stock");
+      invalidateChannels("materials", "stock", "sort");
       setName("");
       setCategory("");
       setThreshold("");
+      setParentId("");
       onClose();
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Could not add material");
@@ -110,16 +171,74 @@ export function MaterialSheet({
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheetHandle" />
         <div className="sheetTitle">Add Material</div>
-        <div className="sheetStep">Owner only · creates a mixed bucket (e.g. Copper → Mixed Copper)</div>
+        <div className="sheetStep">
+          {kind === "MIXED"
+            ? "Owner only · a main category and its unsorted bucket (e.g. Copper → Mixed Copper)"
+            : "Owner only · a finished grade under an existing main category (e.g. PET Blue)"}
+        </div>
         {err && <p className="hint" style={{ color: "var(--red)" }}>{err}</p>}
+
+        {/* The configuration that decides the whole downstream workflow. */}
+        <div className="field">
+          <label>Mixed Material?</label>
+          <div className="kindToggle" role="radiogroup" aria-label="Mixed material?">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={kind === "MIXED"}
+              className={`kindBtn${kind === "MIXED" ? " on" : ""}`}
+              onClick={() => setKind("MIXED")}
+            >
+              YES
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={kind === "DIRECT"}
+              className={`kindBtn${kind === "DIRECT" ? " on" : ""}`}
+              onClick={() => setKind("DIRECT")}
+            >
+              NO
+            </button>
+          </div>
+          <p className="hint">
+            {kind === "MIXED"
+              ? "Arrives unsorted · goes to Sort · segregated into its sub-materials."
+              : "Arrives as one finished grade · skips Sort · goes straight to its own stock."}
+          </p>
+        </div>
+
         <div className="field">
           <label>Material Name *</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Copper" />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={kind === "MIXED" ? "Copper" : "PET Blue"}
+          />
         </div>
-        <div className="field">
-          <label>Category (optional)</label>
-          <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Non-ferrous" />
-        </div>
+
+        {kind === "DIRECT" ? (
+          <div className="field">
+            <label>Main Category *</label>
+            <select value={parentId} onChange={(e) => setParentId(e.target.value)} aria-label="Main category">
+              <option value="">Select main category…</option>
+              {parents.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {parents.length === 0 && !treeQ.isLoading && (
+              <p className="hint">No main category yet — create one with Mixed Material = YES first.</p>
+            )}
+          </div>
+        ) : (
+          <div className="field">
+            <label>Category (optional)</label>
+            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Non-ferrous" />
+          </div>
+        )}
+
         <div className="field">
           <label>Threshold kg (optional)</label>
           <input
@@ -129,7 +248,11 @@ export function MaterialSheet({
             placeholder="1000"
           />
         </div>
-        <button className="cta" disabled={saving || name.trim().length < 2} onClick={submit}>
+        <button
+          className="cta"
+          disabled={saving || name.trim().length < 2 || (kind === "DIRECT" && !parentId)}
+          onClick={submit}
+        >
           {saving ? "SAVING…" : "SAVE MATERIAL"}
         </button>
 
